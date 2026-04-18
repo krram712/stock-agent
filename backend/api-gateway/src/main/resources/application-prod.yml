@@ -20,6 +20,12 @@ spring:
           uri: ${USER_SERVICE_URL:http://user-service:8081}
           predicates:
             - Path=/api/v1/users/**
+          filters:
+            - AddRequestHeader=X-Gateway,axiom
+
+        - id: user-service-watchlists
+          uri: ${USER_SERVICE_URL:http://user-service:8081}
+          predicates:
             - Path=/api/v1/watchlists/**
           filters:
             - AddRequestHeader=X-Gateway,axiom
@@ -28,6 +34,12 @@ spring:
           uri: ${STOCK_DATA_SERVICE_URL:http://stock-data-service:8082}
           predicates:
             - Path=/api/v1/stocks/**
+          filters:
+            - AddRequestHeader=X-Gateway,axiom
+
+        - id: market-data-service
+          uri: ${STOCK_DATA_SERVICE_URL:http://stock-data-service:8082}
+          predicates:
             - Path=/api/v1/market/**
           filters:
             - AddRequestHeader=X-Gateway,axiom
@@ -36,6 +48,12 @@ spring:
           uri: ${ANALYSIS_SERVICE_URL:http://analysis-service:8083}
           predicates:
             - Path=/api/v1/analysis/**
+          filters:
+            - AddRequestHeader=X-Gateway,axiom
+
+        - id: signals-service
+          uri: ${ANALYSIS_SERVICE_URL:http://analysis-service:8083}
+          predicates:
             - Path=/api/v1/signals/**
           filters:
             - AddRequestHeader=X-Gateway,axiom
