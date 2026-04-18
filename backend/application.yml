@@ -1,0 +1,161 @@
+# ============================================================
+# backend/analysis-service/src/main/resources/application.yml
+# ============================================================
+spring:
+  application:
+    name: analysis-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/axiom_analysis}
+    username: ${DB_USERNAME:axiom}
+    password: ${DB_PASSWORD:axiom_secret}
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: false
+    show-sql: false
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: 6379
+      password: ${REDIS_PASSWORD:}
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all
+      retries: 3
+
+server:
+  port: 8083
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+
+jwt:
+  secret: ${JWT_SECRET:axiom_jwt_secret_change_in_prod_min_256_bits}
+
+anthropic:
+  api-key: ${ANTHROPIC_API_KEY:}
+  model: claude-sonnet-4-6
+  max-tokens: 2000
+
+stock-data-service:
+  url: ${STOCK_DATA_SERVICE_URL:http://localhost:8082}
+
+analysis:
+  cache-ttl-minutes: 30
+
+---
+# ============================================================
+# backend/stock-data-service/src/main/resources/application.yml
+# ============================================================
+spring:
+  application:
+    name: stock-data-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/axiom_stocks}
+    username: ${DB_USERNAME:axiom}
+    password: ${DB_PASSWORD:axiom_secret}
+    hikari:
+      maximum-pool-size: 20
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: 6379
+      password: ${REDIS_PASSWORD:}
+
+server:
+  port: 8082
+
+market-data:
+  alpha-vantage:
+    api-key: ${ALPHA_VANTAGE_API_KEY:demo}
+    base-url: https://www.alphavantage.co/query
+  finnhub:
+    api-key: ${FINNHUB_API_KEY:demo}
+    base-url: https://finnhub.io/api/v1
+  polygon:
+    api-key: ${POLYGON_API_KEY:demo}
+    base-url: https://api.polygon.io
+
+---
+# ============================================================
+# backend/user-service/src/main/resources/application.yml
+# ============================================================
+spring:
+  application:
+    name: user-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/axiom_users}
+    username: ${DB_USERNAME:axiom}
+    password: ${DB_PASSWORD:axiom_secret}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: 6379
+      password: ${REDIS_PASSWORD:}
+
+server:
+  port: 8081
+
+jwt:
+  secret: ${JWT_SECRET:axiom_jwt_secret_change_in_prod_min_256_bits}
+  access-token-expiry: 900000
+  refresh-token-expiry: 604800000
+
+---
+# ============================================================
+# backend/api-gateway/src/main/resources/application.yml
+# ============================================================
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      globalcors:
+        corsConfigurations:
+          '[/**]':
+            allowedOrigins:
+              - "http://localhost:3000"
+              - "https://app.axiom.io"
+            allowedMethods: ["GET","POST","PUT","DELETE","OPTIONS"]
+            allowedHeaders: ["*"]
+            allowCredentials: true
+      default-filters:
+        - DedupeResponseHeader=Access-Control-Allow-Credentials Access-Control-Allow-Origin
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: 6379
+      password: ${REDIS_PASSWORD:}
+
+server:
+  port: 8080
+
+jwt:
+  secret: ${JWT_SECRET:axiom_jwt_secret_change_in_prod_min_256_bits}

@@ -1,0 +1,150 @@
+version: '3.8'
+
+services:
+  # ─── Infrastructure ─────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: axiom
+      POSTGRES_PASSWORD: axiom_secret
+      POSTGRES_MULTIPLE_DATABASES: axiom_users,axiom_analysis,axiom_stocks
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U axiom"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --requirepass axiom_redis_secret --maxmemory 512mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+    ports:
+      - "9092:9092"
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+
+  # ─── Microservices ───────────────────────────────────────────────────────────
+  api-gateway:
+    build: ./backend/api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      JWT_SECRET: ${JWT_SECRET:-axiom_jwt_secret_change_in_prod_min_256_bits}
+      USER_SERVICE_URL: http://user-service:8081
+      STOCK_DATA_SERVICE_URL: http://stock-data-service:8082
+      ANALYSIS_SERVICE_URL: http://analysis-service:8083
+      NOTIFICATION_SERVICE_URL: http://notification-service:8084
+    depends_on:
+      - user-service
+      - stock-data-service
+      - analysis-service
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  user-service:
+    build: ./backend/user-service
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      DB_URL: jdbc:postgresql://postgres:5432/axiom_users
+      DB_USERNAME: axiom
+      DB_PASSWORD: axiom_secret
+      REDIS_HOST: redis
+      REDIS_PASSWORD: axiom_redis_secret
+      JWT_SECRET: ${JWT_SECRET:-axiom_jwt_secret_change_in_prod_min_256_bits}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  stock-data-service:
+    build: ./backend/stock-data-service
+    ports:
+      - "8082:8082"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      DB_URL: jdbc:postgresql://postgres:5432/axiom_stocks
+      DB_USERNAME: axiom
+      DB_PASSWORD: axiom_secret
+      REDIS_HOST: redis
+      REDIS_PASSWORD: axiom_redis_secret
+      ALPHA_VANTAGE_API_KEY: ${ALPHA_VANTAGE_API_KEY:-demo}
+      FINNHUB_API_KEY: ${FINNHUB_API_KEY:-demo}
+      POLYGON_API_KEY: ${POLYGON_API_KEY:-demo}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  analysis-service:
+    build: ./backend/analysis-service
+    ports:
+      - "8083:8083"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      DB_URL: jdbc:postgresql://postgres:5432/axiom_analysis
+      DB_USERNAME: axiom
+      DB_PASSWORD: axiom_secret
+      REDIS_HOST: redis
+      REDIS_PASSWORD: axiom_redis_secret
+      STOCK_DATA_SERVICE_URL: http://stock-data-service:8082
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  notification-service:
+    build: ./backend/notification-service
+    ports:
+      - "8084:8084"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      FCM_SERVER_KEY: ${FCM_SERVER_KEY}
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+    depends_on:
+      - kafka
+
+volumes:
+  postgres_data:
+  redis_data:

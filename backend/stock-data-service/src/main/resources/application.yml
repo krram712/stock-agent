@@ -1,0 +1,33 @@
+spring:
+  application:
+    name: stock-data-service
+  datasource:
+    url: jdbc:h2:mem:axiom_stocks;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    database-platform: org.hibernate.dialect.H2Dialect
+
+market-data:
+  alpha-vantage:
+    api-key: 589RTKOUOWRYF2LA
+    base-url: https://www.alphavantage.co/query
+  finnhub:
+    api-key: d7hcjrpr01qhiu0b5h40d7hcjrpr01qhiu0b5h4g
+    base-url: https://finnhub.io/api/v1
+  polygon:
+    api-key: hEYL2ZTgHp1j6bH7ACzvSn2KMw65G9b5
+    base-url: https://api.polygon.io
+
+server:
+  port: 8082
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+

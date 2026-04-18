@@ -1,0 +1,32 @@
+spring:
+  application:
+    name: user-service
+  datasource:
+    url: jdbc:h2:mem:axiom_users;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    database-platform: org.hibernate.dialect.H2Dialect
+
+server:
+  port: 8081
+
+jwt:
+  secret: axiom_jwt_secret_change_in_prod_min_256_bits_long_enough
+  access-token-expiry: 900000
+  refresh-token-expiry: 604800000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
