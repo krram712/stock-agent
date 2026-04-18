@@ -24,6 +24,10 @@ public class MarketDataService {
     private final TechnicalAnalysisEngine technicalEngine;
     private final WebClient.Builder webClientBuilder;
 
+    // Yahoo Finance base URLs (no API key required)
+    private static final String YAHOO_CHART_URL   = "https://query1.finance.yahoo.com";
+    private static final String YAHOO_CHART_URL2  = "https://query2.finance.yahoo.com";
+
     @Value("${market-data.alpha-vantage.api-key:demo}")
     private String alphaVantageKey;
     @Value("${market-data.alpha-vantage.base-url:https://www.alphavantage.co/query}")
@@ -58,9 +62,159 @@ public class MarketDataService {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // QUOTE
+    // YAHOO FINANCE — QUOTE (PRIMARY, free forever)
+    // ═══════════════════════════════════════════════════════════════
+    private StockQuote fetchLiveQuoteYahoo(String ticker) {
+        String url = YAHOO_CHART_URL;
+        JsonNode root;
+        try {
+            root = webClientBuilder.baseUrl(url).build().get()
+                .uri("/v8/finance/chart/" + ticker + "?interval=1d&range=1d&includePrePost=false")
+                .retrieve().bodyToMono(JsonNode.class).block(Duration.ofSeconds(12));
+        } catch (Exception e) {
+            // Fallback to query2
+            root = webClientBuilder.baseUrl(YAHOO_CHART_URL2).build().get()
+                .uri("/v8/finance/chart/" + ticker + "?interval=1d&range=1d&includePrePost=false")
+                .retrieve().bodyToMono(JsonNode.class).block(Duration.ofSeconds(12));
+        }
+
+        JsonNode meta = root.path("chart").path("result").path(0).path("meta");
+        if (meta.isMissingNode()) throw new RuntimeException("Yahoo: no data for " + ticker);
+
+        double price    = meta.path("regularMarketPrice").asDouble();
+        if (price == 0) throw new RuntimeException("Yahoo: price=0 for " + ticker);
+        double prev     = meta.path("chartPreviousClose").asDouble(meta.path("previousClose").asDouble());
+        double open     = meta.path("regularMarketOpen").asDouble(prev);
+        double high     = meta.path("regularMarketDayHigh").asDouble(price);
+        double low      = meta.path("regularMarketDayLow").asDouble(price);
+        long   volume   = meta.path("regularMarketVolume").asLong(1_000_000L);
+        long   avgVol   = meta.path("averageDailyVolume10Day").asLong(volume);
+        double mktCap   = meta.path("marketCap").asDouble(price * 15_000_000_000.0);
+        double w52h     = meta.path("fiftyTwoWeekHigh").asDouble(price * 1.38);
+        double w52l     = meta.path("fiftyTwoWeekLow").asDouble(price * 0.62);
+
+        log.info("✅ LIVE quote (Yahoo Finance): {} @ ${}", ticker, price);
+        return StockQuote.builder()
+            .ticker(ticker).price(bd(price))
+            .open(bd(open)).high(bd(high)).low(bd(low))
+            .previousClose(bd(prev))
+            .change(bd(price - prev))
+            .changePercent(bd(prev > 0 ? (price - prev) / prev * 100 : 0))
+            .volume(volume).avgVolume(avgVol)
+            .marketCap(bd(mktCap))
+            .week52High(bd(w52h)).week52Low(bd(w52l))
+            .timestamp(Instant.now())
+            .build();
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // YAHOO FINANCE — OHLCV HISTORY (PRIMARY)
+    // ═══════════════════════════════════════════════════════════════
+    private Map<String, List<BigDecimal>> fetchDailyOHLCVYahoo(String ticker, int limit) {
+        // map limit to Yahoo range param
+        String range = limit <= 7 ? "5d" : limit <= 30 ? "1mo" : limit <= 90 ? "3mo" : limit <= 180 ? "6mo" : "1y";
+        JsonNode root;
+        try {
+            root = webClientBuilder.baseUrl(YAHOO_CHART_URL).build().get()
+                .uri("/v8/finance/chart/" + ticker + "?interval=1d&range=" + range)
+                .retrieve().bodyToMono(JsonNode.class).block(Duration.ofSeconds(15));
+        } catch (Exception e) {
+            root = webClientBuilder.baseUrl(YAHOO_CHART_URL2).build().get()
+                .uri("/v8/finance/chart/" + ticker + "?interval=1d&range=" + range)
+                .retrieve().bodyToMono(JsonNode.class).block(Duration.ofSeconds(15));
+        }
+
+        JsonNode result  = root.path("chart").path("result").path(0);
+        JsonNode quote   = result.path("indicators").path("quote").path(0);
+        JsonNode closesN = quote.path("close");
+        if (closesN.isMissingNode() || closesN.size() == 0) throw new RuntimeException("Yahoo: no OHLCV for " + ticker);
+
+        List<BigDecimal> closes  = new ArrayList<>();
+        List<BigDecimal> highs   = new ArrayList<>();
+        List<BigDecimal> lows    = new ArrayList<>();
+        List<BigDecimal> volumes = new ArrayList<>();
+
+        int size = Math.min(closesN.size(), limit);
+        int start = closesN.size() - size;
+        for (int i = start; i < closesN.size(); i++) {
+            double c = closesN.path(i).asDouble();
+            double h = quote.path("high").path(i).asDouble(c);
+            double l = quote.path("low").path(i).asDouble(c);
+            double v = quote.path("volume").path(i).asDouble(1_000_000);
+            if (c == 0) continue; // skip null bars
+            closes.add(bd(c)); highs.add(bd(h)); lows.add(bd(l)); volumes.add(bd(v));
+        }
+        if (closes.isEmpty()) throw new RuntimeException("Yahoo: empty OHLCV for " + ticker);
+        log.info("✅ LIVE OHLCV (Yahoo Finance): {} — {} bars", ticker, closes.size());
+        return Map.of("close", closes, "high", highs, "low", lows, "volume", volumes);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // YAHOO FINANCE — FUNDAMENTALS (PRIMARY)
+    // ═══════════════════════════════════════════════════════════════
+    private Map<String, Object> fetchFundamentalsYahoo(String ticker) {
+        String modules = "summaryDetail,defaultKeyStatistics,financialData,price";
+        JsonNode root;
+        try {
+            root = webClientBuilder.baseUrl(YAHOO_CHART_URL).build().get()
+                .uri("/v10/finance/quoteSummary/" + ticker + "?modules=" + modules)
+                .retrieve().bodyToMono(JsonNode.class).block(Duration.ofSeconds(12));
+        } catch (Exception e) {
+            root = webClientBuilder.baseUrl(YAHOO_CHART_URL2).build().get()
+                .uri("/v10/finance/quoteSummary/" + ticker + "?modules=" + modules)
+                .retrieve().bodyToMono(JsonNode.class).block(Duration.ofSeconds(12));
+        }
+
+        JsonNode res  = root.path("quoteSummary").path("result").path(0);
+        if (res.isMissingNode()) throw new RuntimeException("Yahoo fundamentals: no data for " + ticker);
+
+        JsonNode sd   = res.path("summaryDetail");
+        JsonNode ks   = res.path("defaultKeyStatistics");
+        JsonNode fd   = res.path("financialData");
+        JsonNode pr   = res.path("price");
+
+        double peRatio        = sd.path("trailingPE").path("raw").asDouble(
+                                ks.path("trailingEps").path("raw").asDouble(0) > 0 ?
+                                pr.path("regularMarketPrice").path("raw").asDouble(100) /
+                                ks.path("trailingEps").path("raw").asDouble(1) : 20);
+        double pegRatio       = ks.path("pegRatio").path("raw").asDouble(1.5);
+        double pbRatio        = ks.path("priceToBook").path("raw").asDouble(3.0);
+        double revenueGrowth  = fd.path("revenueGrowth").path("raw").asDouble(0.10) * 100;
+        double netMargin      = fd.path("profitMargins").path("raw").asDouble(0.15) * 100;
+        double roe            = fd.path("returnOnEquity").path("raw").asDouble(0.15) * 100;
+        double debtToEquity   = fd.path("debtToEquity").path("raw").asDouble(50) / 100;
+        double dividendYield  = sd.path("dividendYield").path("raw").asDouble(0) * 100;
+        double eps            = ks.path("trailingEps").path("raw").asDouble(5.0);
+        double analystTarget  = fd.path("targetMeanPrice").path("raw").asDouble(0);
+        double currentPrice   = pr.path("regularMarketPrice").path("raw").asDouble(0);
+        double upside         = analystTarget > 0 && currentPrice > 0 ? (analystTarget - currentPrice) / currentPrice * 100 : 10;
+        double buyPct         = fd.path("recommendationMean").path("raw").asDouble(2.5) <= 2.5 ? 75 : 50;
+
+        log.info("✅ LIVE fundamentals (Yahoo Finance): {}", ticker);
+        Map<String, Object> result = new HashMap<>();
+        result.put("ticker",           ticker);
+        result.put("peRatio",          bd(peRatio));
+        result.put("pegRatio",         bd(Math.max(0, pegRatio)));
+        result.put("pbRatio",          bd(Math.max(0, pbRatio)));
+        result.put("revenueGrowthYoy", bd(revenueGrowth));
+        result.put("netMargin",        bd(netMargin));
+        result.put("roe",              bd(roe));
+        result.put("debtToEquity",     bd(debtToEquity));
+        result.put("dividendYield",    bd(dividendYield));
+        result.put("eps",              bd(eps));
+        result.put("analystTarget",    bd(analystTarget));
+        result.put("upsideToTarget",   bd(upside));
+        result.put("buyPercentage",    bd(buyPct));
+        return result;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // QUOTE — Yahoo first, then Finnhub, then AlphaVantage, then demo
     // ═══════════════════════════════════════════════════════════════
     public StockQuote getQuote(String ticker) {
+        try { return fetchLiveQuoteYahoo(ticker); }
+        catch (Exception e) { log.warn("Yahoo quote failed for {}: {}", ticker, e.getMessage()); }
+
         if (isRealKey(finnhubKey)) {
             try { return fetchLiveQuoteFinnhub(ticker); }
             catch (Exception e) { log.warn("Finnhub quote failed for {}: {}", ticker, e.getMessage()); }
@@ -80,7 +234,6 @@ public class MarketDataService {
         double price = q.path("c").asDouble();
         if (price == 0) throw new RuntimeException("No Finnhub data");
         double prev = q.path("pc").asDouble();
-        // Also get 52w high/low from Polygon if available
         double w52h = price * 1.38, w52l = price * 0.62;
         if (isRealKey(polygonKey)) {
             try {
@@ -146,24 +299,29 @@ public class MarketDataService {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // TECHNICALS — use real daily closes from Alpha Vantage
+    // TECHNICALS — Yahoo first, then Alpha Vantage, then synthetic
     // ═══════════════════════════════════════════════════════════════
     public TechnicalIndicators getTechnicals(String ticker) {
         List<BigDecimal> closes, highs, lows, volumes;
+
+        try {
+            Map<String, List<BigDecimal>> ohlcv = fetchDailyOHLCVYahoo(ticker, 250);
+            closes = ohlcv.get("close"); highs = ohlcv.get("high");
+            lows   = ohlcv.get("low");   volumes = ohlcv.get("volume");
+            return technicalEngine.calculate(ticker, closes, highs, lows, volumes);
+        } catch (Exception e) { log.warn("Yahoo OHLCV failed for {}: {}", ticker, e.getMessage()); }
+
         if (isRealKey(alphaVantageKey)) {
             try {
                 Map<String, List<BigDecimal>> ohlcv = fetchDailyOHLCVAlphaVantage(ticker, 250);
-                closes  = ohlcv.get("close");
-                highs   = ohlcv.get("high");
-                lows    = ohlcv.get("low");
-                volumes = ohlcv.get("volume");
+                closes  = ohlcv.get("close"); highs   = ohlcv.get("high");
+                lows    = ohlcv.get("low");   volumes = ohlcv.get("volume");
                 log.info("✅ LIVE technicals (Alpha Vantage): {} — {} bars", ticker, closes.size());
                 return technicalEngine.calculate(ticker, closes, highs, lows, volumes);
-            } catch (Exception e) {
-                log.warn("AlphaVantage daily data failed for {}: {}", ticker, e.getMessage());
-            }
+            } catch (Exception e) { log.warn("AlphaVantage daily data failed for {}: {}", ticker, e.getMessage()); }
         }
-        // Fallback: synthetic history anchored to live price
+
+        // Fallback: synthetic
         double price = getQuote(ticker).getPrice().doubleValue();
         closes  = generatePriceHistory(price, 250);
         highs   = closes.stream().map(c -> c.multiply(BigDecimal.valueOf(1.005))).toList();
@@ -182,13 +340,11 @@ public class MarketDataService {
             .retrieve().bodyToMono(JsonNode.class).block(Duration.ofSeconds(15));
         JsonNode ts = root.path("Time Series (Daily)");
         if (ts.isMissingNode()) throw new RuntimeException("No daily data");
-
         List<BigDecimal> closes = new ArrayList<>(), highs = new ArrayList<>(),
             lows = new ArrayList<>(), vols = new ArrayList<>();
-        // Alpha Vantage returns newest first — reverse to get oldest first
         List<String> dates = new ArrayList<>();
         ts.fieldNames().forEachRemaining(dates::add);
-        Collections.sort(dates); // ascending
+        Collections.sort(dates);
         int start = Math.max(0, dates.size() - limit);
         for (int i = start; i < dates.size(); i++) {
             JsonNode day = ts.path(dates.get(i));
@@ -201,14 +357,60 @@ public class MarketDataService {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // HISTORY (candles) — Alpha Vantage daily
+    // HISTORY — Yahoo first, then Alpha Vantage, then demo
     // ═══════════════════════════════════════════════════════════════
     public Map<String, Object> getHistory(String ticker, String interval, String range) {
+        try { return fetchHistoryYahoo(ticker, interval, range); }
+        catch (Exception e) { log.warn("Yahoo history failed for {}: {}", ticker, e.getMessage()); }
+
         if (isRealKey(alphaVantageKey)) {
             try { return fetchHistoryAlphaVantage(ticker, interval, range); }
             catch (Exception e) { log.warn("AlphaVantage history failed for {}: {}", ticker, e.getMessage()); }
         }
         return buildDemoHistory(ticker, interval, range);
+    }
+
+    private Map<String, Object> fetchHistoryYahoo(String ticker, String interval, String range) {
+        String yahooRange = switch (range) {
+            case "1D" -> "1d"; case "5D" -> "5d"; case "1M" -> "1mo";
+            case "3M" -> "3mo"; case "6M" -> "6mo"; case "1Y" -> "1y";
+            case "5Y" -> "5y"; default -> "1y";
+        };
+        String yahooInterval = switch (interval) {
+            case "1m" -> "1m"; case "5m" -> "5m"; case "15m" -> "15m";
+            case "1h" -> "60m"; default -> "1d";
+        };
+        JsonNode root;
+        try {
+            root = webClientBuilder.baseUrl(YAHOO_CHART_URL).build().get()
+                .uri("/v8/finance/chart/" + ticker + "?interval=" + yahooInterval + "&range=" + yahooRange)
+                .retrieve().bodyToMono(JsonNode.class).block(Duration.ofSeconds(15));
+        } catch (Exception e) {
+            root = webClientBuilder.baseUrl(YAHOO_CHART_URL2).build().get()
+                .uri("/v8/finance/chart/" + ticker + "?interval=" + yahooInterval + "&range=" + yahooRange)
+                .retrieve().bodyToMono(JsonNode.class).block(Duration.ofSeconds(15));
+        }
+
+        JsonNode result     = root.path("chart").path("result").path(0);
+        JsonNode timestamps = result.path("timestamp");
+        JsonNode q          = result.path("indicators").path("quote").path(0);
+
+        List<Map<String, Object>> candles = new ArrayList<>();
+        for (int i = 0; i < timestamps.size(); i++) {
+            double c = q.path("close").path(i).asDouble();
+            if (c == 0) continue;
+            Map<String, Object> candle = new HashMap<>();
+            candle.put("t", timestamps.path(i).asLong() * 1000L);
+            candle.put("o", bd(q.path("open").path(i).asDouble(c)));
+            candle.put("h", bd(q.path("high").path(i).asDouble(c)));
+            candle.put("l", bd(q.path("low").path(i).asDouble(c)));
+            candle.put("c", bd(c));
+            candle.put("v", q.path("volume").path(i).asLong(0));
+            candles.add(candle);
+        }
+        if (candles.isEmpty()) throw new RuntimeException("Yahoo: empty history for " + ticker);
+        log.info("✅ LIVE history (Yahoo Finance): {} — {} candles", ticker, candles.size());
+        return Map.of("ticker", ticker, "interval", interval, "range", range, "candles", candles);
     }
 
     private Map<String, Object> fetchHistoryAlphaVantage(String ticker, String interval, String range) {
@@ -251,9 +453,12 @@ public class MarketDataService {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // FUNDAMENTALS — Polygon.io
+    // FUNDAMENTALS — Yahoo first, then Polygon, then demo
     // ═══════════════════════════════════════════════════════════════
     public Map<String, Object> getFundamentals(String ticker) {
+        try { return fetchFundamentalsYahoo(ticker); }
+        catch (Exception e) { log.warn("Yahoo fundamentals failed for {}: {}", ticker, e.getMessage()); }
+
         if (isRealKey(polygonKey)) {
             try { return fetchFundamentalsPolygon(ticker); }
             catch (Exception e) { log.warn("Polygon fundamentals failed for {}: {}", ticker, e.getMessage()); }
@@ -263,31 +468,23 @@ public class MarketDataService {
 
     private Map<String, Object> fetchFundamentalsPolygon(String ticker) {
         WebClient client = webClientBuilder.baseUrl(polygonUrl).build();
-        // Polygon financials v2
         JsonNode root = client.get()
             .uri(u -> u.path("/vX/reference/financials")
                 .queryParam("ticker", ticker).queryParam("limit", 1)
                 .queryParam("apiKey", polygonKey).build())
             .retrieve().bodyToMono(JsonNode.class).block(Duration.ofSeconds(10));
-
         JsonNode results = root.path("results");
         if (!results.isArray() || results.size() == 0) throw new RuntimeException("No Polygon financials");
         JsonNode fin = results.get(0).path("financials");
-
-        double revenue     = fin.path("income_statement").path("revenues").path("value").asDouble(0);
-        double netIncome   = fin.path("income_statement").path("net_income_loss").path("value").asDouble(0);
-        double totalAssets = fin.path("balance_sheet").path("assets").path("value").asDouble(1);
-        double equity      = fin.path("balance_sheet").path("equity").path("value").asDouble(1);
-        double debt        = fin.path("balance_sheet").path("liabilities").path("value").asDouble(0);
-        double netMargin   = revenue > 0 ? netIncome / revenue * 100 : 0;
-        double roe         = equity > 0 ? netIncome / equity * 100 : 0;
-        double de          = equity > 0 ? debt / equity : 0;
-
-        // Get quote for price-based ratios
+        double revenue   = fin.path("income_statement").path("revenues").path("value").asDouble(0);
+        double netIncome = fin.path("income_statement").path("net_income_loss").path("value").asDouble(0);
+        double equity    = fin.path("balance_sheet").path("equity").path("value").asDouble(1);
+        double debt      = fin.path("balance_sheet").path("liabilities").path("value").asDouble(0);
+        double netMargin = revenue > 0 ? netIncome / revenue * 100 : 0;
+        double roe       = equity > 0 ? netIncome / equity * 100 : 0;
+        double de        = equity > 0 ? debt / equity : 0;
         StockQuote q = getQuote(ticker);
         double price = q.getPrice().doubleValue();
-
-        // Analyst ratings from Finnhub
         double buyPct = 65;
         if (isRealKey(finnhubKey)) {
             try {
@@ -302,7 +499,6 @@ public class MarketDataService {
                 }
             } catch (Exception ignored) {}
         }
-
         log.info("✅ LIVE fundamentals (Polygon): {}", ticker);
         Map<String, Object> result = new HashMap<>();
         result.put("ticker", ticker);
@@ -337,7 +533,7 @@ public class MarketDataService {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // NEWS — Finnhub
+    // NEWS — Finnhub (unchanged)
     // ═══════════════════════════════════════════════════════════════
     public List<Map<String, Object>> getNews(String ticker) {
         if (isRealKey(finnhubKey)) {
@@ -354,7 +550,6 @@ public class MarketDataService {
             .uri(u -> u.path("/company-news").queryParam("symbol", ticker)
                 .queryParam("from", from).queryParam("to", to).queryParam("token", finnhubKey).build())
             .retrieve().bodyToMono(JsonNode.class).block(Duration.ofSeconds(10));
-
         List<Map<String, Object>> news = new ArrayList<>();
         if (root.isArray()) {
             int count = Math.min(root.size(), 5);
