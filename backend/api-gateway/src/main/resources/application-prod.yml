@@ -11,22 +11,26 @@ spring:
       routes:
         - id: user-service-auth
           uri: ${USER_SERVICE_URL:http://user-service:8081}
-          predicates: [Path=/api/v1/auth/**]
+          predicates:
+            - Path=/api/v1/auth/**
           filters: [AddRequestHeader=X-Gateway, axiom]
 
         - id: user-service-users
           uri: ${USER_SERVICE_URL:http://user-service:8081}
-          predicates: [Path=/api/v1/users/**,/api/v1/watchlists/**]
+          predicates:
+            - Path=/api/v1/users/**,/api/v1/watchlists/**
           filters: [AddRequestHeader=X-Gateway, axiom]
 
         - id: stock-data-service
           uri: ${STOCK_DATA_SERVICE_URL:http://stock-data-service:8082}
-          predicates: [Path=/api/v1/stocks/**,/api/v1/market/**]
+          predicates:
+            - Path=/api/v1/stocks/**,/api/v1/market/**
           filters: [AddRequestHeader=X-Gateway, axiom]
 
         - id: analysis-service
           uri: ${ANALYSIS_SERVICE_URL:http://analysis-service:8083}
-          predicates: [Path=/api/v1/analysis/**,/api/v1/signals/**]
+          predicates:
+            - Path=/api/v1/analysis/**,/api/v1/signals/**
           filters: [AddRequestHeader=X-Gateway, axiom]
 
 server:
