@@ -153,7 +153,7 @@ services:
       - "443:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/conf.d/axiom-init.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/conf.d/axiom.conf:/etc/nginx/conf.d/axiom.conf:ro
       - certbot_www:/var/www/certbot:ro
       - certbot_conf:/etc/letsencrypt:ro
     depends_on:
