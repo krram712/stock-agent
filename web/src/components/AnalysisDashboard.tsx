@@ -82,6 +82,15 @@ export default function AnalysisDashboard() {
 
   return (
     <div style={{ minHeight: '100vh', background: '#06101a', fontFamily: 'JetBrains Mono, Fira Code, monospace', color: '#c8d6e0' }}>
+      <style>{`
+        @media (max-width: 768px) {
+          .axiom-two-col { grid-template-columns: 1fr !important; }
+          .axiom-verdict-row { flex-direction: column !important; }
+          .axiom-verdict-row > div { min-width: 0 !important; }
+          .axiom-ticker-input { width: 100% !important; font-size: 16px !important; }
+          .axiom-signals-grid { grid-template-columns: repeat(2, 1fr) !important; }
+        }
+      `}</style>
       {/* Grid bg */}
       <div style={{ position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none', backgroundImage: 'linear-gradient(rgba(0,255,136,0.022) 1px,transparent 1px),linear-gradient(90deg,rgba(0,255,136,0.022) 1px,transparent 1px)', backgroundSize: '44px 44px' }} />
 
@@ -108,22 +117,20 @@ export default function AnalysisDashboard() {
         {/* Input */}
         <div style={{ background: 'rgba(255,255,255,0.022)', border: '1px solid rgba(0,255,136,0.1)', borderRadius: 14, padding: 20, marginBottom: 16 }}>
           <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 14, alignItems: 'flex-end' }}>
-            <div style={{ width: '100%' }} className="ticker-horizon-row">
-              <div className="ticker-input-wrap">
-                <div style={{ fontSize: 8, letterSpacing: 2, color: '#2a4050', marginBottom: 6 }}>TICKER</div>
-                <input value={ticker} onChange={e => setTicker(e.target.value.toUpperCase().replace(/[^A-Z.]/g, ''))} onKeyDown={e => e.key === 'Enter' && handleAnalyze()} placeholder="AAPL" maxLength={8}
-                  style={{ width: 110, background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(0,255,136,0.35)', borderRadius: 8, padding: '10px 12px', color: '#00ff88', fontSize: 20, fontWeight: 800, fontFamily: 'inherit', letterSpacing: 3, outline: 'none' }} />
-              </div>
-              <div style={{ flex: 1, minWidth: 200 }}>
-                <div style={{ fontSize: 8, letterSpacing: 2, color: '#2a4050', marginBottom: 6 }}>HORIZON</div>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {HORIZONS.map(h => (
-                    <button key={h.id} onClick={() => setHorizon(h.id)}
-                      style={{ padding: '8px 12px', borderRadius: 6, fontSize: 11, fontFamily: 'inherit', fontWeight: 600, cursor: 'pointer', background: horizon === h.id ? 'rgba(0,255,136,0.12)' : 'rgba(255,255,255,0.03)', border: horizon === h.id ? '1px solid rgba(0,255,136,0.6)' : '1px solid rgba(255,255,255,0.07)', color: horizon === h.id ? '#00ff88' : '#3d5a6e' }}>
-                      {h.label}
-                    </button>
-                  ))}
-                </div>
+            <div>
+              <div style={{ fontSize: 8, letterSpacing: 2, color: '#2a4050', marginBottom: 6 }}>TICKER</div>
+              <input value={ticker} onChange={e => setTicker(e.target.value.toUpperCase().replace(/[^A-Z.]/g, ''))} onKeyDown={e => e.key === 'Enter' && handleAnalyze()} placeholder="AAPL" maxLength={8}
+                style={{ width: 110, background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(0,255,136,0.35)', borderRadius: 8, padding: '10px 12px', color: '#00ff88', fontSize: 20, fontWeight: 800, fontFamily: 'inherit', letterSpacing: 3, outline: 'none' }} />
+            </div>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <div style={{ fontSize: 8, letterSpacing: 2, color: '#2a4050', marginBottom: 6 }}>HORIZON</div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {HORIZONS.map(h => (
+                  <button key={h.id} onClick={() => setHorizon(h.id)}
+                    style={{ padding: '8px 12px', borderRadius: 6, fontSize: 11, fontFamily: 'inherit', fontWeight: 600, cursor: 'pointer', background: horizon === h.id ? 'rgba(0,255,136,0.12)' : 'rgba(255,255,255,0.03)', border: horizon === h.id ? '1px solid rgba(0,255,136,0.6)' : '1px solid rgba(255,255,255,0.07)', color: horizon === h.id ? '#00ff88' : '#3d5a6e' }}>
+                    {h.label}
+                  </button>
+                ))}
               </div>
             </div>
           </div>
@@ -159,7 +166,7 @@ export default function AnalysisDashboard() {
         {/* ── Analysis result + TradingView widgets side by side ── */}
         {a && (
           <>
-            <div className="verdict-row" style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+            <div className="axiom-verdict-row" style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
               <div style={{ flexShrink: 0, background: verdictColor + '12', border: `1px solid ${verdictColor}30`, borderRadius: 10, padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 12 }}>
                 <div style={{ fontSize: 34, fontWeight: 800, color: verdictColor, lineHeight: 1 }}>{a.overallScore}</div>
                 <div>
@@ -181,8 +188,8 @@ export default function AnalysisDashboard() {
             </div>
 
             {/* Trade signals grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(100px,1fr))', gap: 8, marginBottom: 14 }}>
-              {{
+            <div className="axiom-signals-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))', gap: 8, marginBottom: 14 }}>
+              {[
                 { label: 'ENTRY LOW',   value: `$${a.entryLow?.toFixed(2)}`,    color: '#00ff88' },
                 { label: 'ENTRY HIGH',  value: `$${a.entryHigh?.toFixed(2)}`,   color: '#00ff88' },
                 { label: 'STOP LOSS',   value: `$${a.stopLoss?.toFixed(2)}`,    color: '#ef4444' },
@@ -190,7 +197,7 @@ export default function AnalysisDashboard() {
                 { label: 'TARGET 2',    value: `$${a.target2?.toFixed(2)}`,     color: '#fbbf24' },
                 { label: 'TARGET 3',    value: `$${a.target3?.toFixed(2)}`,     color: '#fbbf24' },
                 { label: 'RISK/REWARD', value: `1:${a.riskReward?.toFixed(1)}`, color: '#00d4ff' },
-              }.map(item => (
+              ].map(item => (
                 <div key={item.label} style={{ background: 'rgba(255,255,255,0.018)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 8, padding: '10px 12px', textAlign: 'center' }}>
                   <div style={{ fontSize: 8, letterSpacing: 1, color: '#2a4050', marginBottom: 4 }}>{item.label}</div>
                   <div style={{ fontSize: 14, fontWeight: 700, color: item.color }}>{item.value}</div>
@@ -199,7 +206,7 @@ export default function AnalysisDashboard() {
             </div>
 
             {/* Two-column layout: AI sections left, TradingView widgets right */}
-            <div className="tv-two-col" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 340px', gap: 14, alignItems: 'start' }}>
+            <div className="axiom-two-col" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 340px', gap: 14, alignItems: 'start' }}>
               <div>
                 {Object.entries(SECTION_META).map(([key]) => (
                   <SectionCard key={key} sectionKey={key} data={(a as any)[key]} />
@@ -234,28 +241,8 @@ export default function AnalysisDashboard() {
         input::placeholder { color: #1a2e38; }
         ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-thumb { background: rgba(0,255,136,0.15); border-radius: 3px; }
-
-        .ticker-horizon-row { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; }
-        .ticker-input-wrap { flex-shrink: 0; }
-
-        @media (max-width: 600px) {
-          .tv-two-col {
-            grid-template-columns: 1fr !important;
-          }
-          .ticker-horizon-row {
-            flex-direction: column;
-            align-items: stretch;
-          }
-          .ticker-input-wrap input {
-            width: 100% !important;
-            font-size: 16px !important;
-          }
-          .verdict-row {
-            flex-direction: column;
-          }
-          .verdict-row > div {
-            min-width: 0 !important;
-          }
+        @media (max-width: 768px) {
+          .tv-two-col { grid-template-columns: 1fr !important; }
         }
       `}</style>
     </div>
