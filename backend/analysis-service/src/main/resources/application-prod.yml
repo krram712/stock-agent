@@ -1,0 +1,23 @@
+spring:
+  datasource:
+    url: ${DB_URL}
+    driver-class-name: org.postgresql.Driver
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+
+server:
+  port: 8083
+
+stock-data-service:
+  url: ${STOCK_DATA_SERVICE_URL:http://stock-data-service:8082}
+
+anthropic:
+  api-key: ${ANTHROPIC_API_KEY}
+
+analysis:
+  cache-ttl-minutes: 30
+
