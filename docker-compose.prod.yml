@@ -133,6 +133,17 @@ services:
       timeout: 10s
       retries: 3
 
+  # ─── Web Frontend ─────────────────────────────────────────────
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: https://stockagentify.com
+    restart: always
+    networks:
+      - axiom-net
+
   # ─── Nginx Reverse Proxy ───────────────────────────────────────
   nginx:
     image: nginx:alpine
