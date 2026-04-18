@@ -110,6 +110,8 @@ services:
       context: ./backend
       dockerfile: api-gateway/Dockerfile
     restart: always
+    volumes:
+      - ./backend/api-gateway/src/main/resources/application-prod.yml:/app/BOOT-INF/classes/application-prod.yml:ro
     environment:
       SPRING_PROFILES_ACTIVE: prod
       JWT_SECRET: ${JWT_SECRET}
@@ -140,7 +142,7 @@ services:
       - "443:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/conf.d/axiom-init.conf:/etc/nginx/conf.d/default.conf:ro
       - certbot_www:/var/www/certbot:ro
       - certbot_conf:/etc/letsencrypt:ro
     depends_on:
