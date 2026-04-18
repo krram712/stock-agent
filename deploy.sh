@@ -10,6 +10,13 @@ DOMAIN=${1:-"yourdomain.com"}
 APP_DIR="/opt/axiom"
 REPO="https://github.com/krram712/stock-agent.git"
 
+# Detect if domain is actually an IP address
+IS_IP=false
+if [[ $DOMAIN =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  IS_IP=true
+  echo "  ℹ️  IP address detected — SSL will be skipped."
+fi
+
 echo ""
 echo "  ██████╗  █████╗ ██╗  ██╗██╗ ██████╗ ███╗   ███╗"
 echo "  ██╔══██╗██╔══██╗╚██╗██╔╝██║██╔═══██╗████╗ ████║"
@@ -80,11 +87,13 @@ chmod +x scripts/init-db.sh
 
 # ── 6. Configure Nginx domain ──────────────────────────────────
 echo "[6/7] Configuring Nginx for $DOMAIN..."
-sed -i "s/YOUR_DOMAIN.com/$DOMAIN/g" nginx/conf.d/axiom.conf
-sed -i "s/YOUR_DOMAIN.com/$DOMAIN/g" nginx/conf.d/axiom-init.conf
-
-# Start with HTTP-only config first (for certbot)
-cp nginx/conf.d/axiom-init.conf nginx/conf.d/default.conf
+if [ "$IS_IP" = true ]; then
+  cp nginx/conf.d/axiom-ip.conf nginx/conf.d/default.conf
+else
+  sed -i "s/YOUR_DOMAIN.com/$DOMAIN/g" nginx/conf.d/axiom.conf
+  sed -i "s/YOUR_DOMAIN.com/$DOMAIN/g" nginx/conf.d/axiom-init.conf
+  cp nginx/conf.d/axiom-init.conf nginx/conf.d/default.conf
+fi
 
 # ── 7. Start services ──────────────────────────────────────────
 echo "[7/7] Starting all services..."
@@ -95,26 +104,39 @@ echo "  Waiting 60s for services to start..."
 sleep 60
 
 # ── 8. Issue SSL certificate ───────────────────────────────────
-echo "[8/8] Issuing SSL certificate for $DOMAIN..."
-EMAIL=$(cat .env | grep ADMIN_EMAIL | cut -d= -f2 || echo "admin@$DOMAIN")
-docker compose -f docker-compose.prod.yml run --rm certbot \
-  certonly --webroot --webroot-path=/var/www/certbot \
-  --email "$EMAIL" --agree-tos --no-eff-email \
-  -d "$DOMAIN" -d "www.$DOMAIN" || echo "  ⚠️  SSL failed — ensure DNS points to this server IP first"
+if [ "$IS_IP" = false ]; then
+  echo "[8/8] Issuing SSL certificate for $DOMAIN..."
+  EMAIL=$(cat .env | grep ADMIN_EMAIL | cut -d= -f2 || echo "admin@$DOMAIN")
+  docker compose -f docker-compose.prod.yml run --rm certbot \
+    certonly --webroot --webroot-path=/var/www/certbot \
+    --email "$EMAIL" --agree-tos --no-eff-email \
+    -d "$DOMAIN" -d "www.$DOMAIN" || echo "  ⚠️  SSL failed — ensure DNS points to this server IP first"
 
-# Switch to full HTTPS config
-cp nginx/conf.d/axiom.conf nginx/conf.d/default.conf
-docker compose -f docker-compose.prod.yml restart nginx
+  # Switch to full HTTPS config
+  cp nginx/conf.d/axiom.conf nginx/conf.d/default.conf
+  docker compose -f docker-compose.prod.yml restart nginx
+else
+  echo "[8/8] Skipping SSL (IP address mode — HTTP only)"
+fi
 
 # ── Done ───────────────────────────────────────────────────────
 echo ""
 echo "  ════════════════════════════════════════════════"
 echo "  ✅  Axiom deployed!"
-echo "  🌐  API:  https://$DOMAIN"
-echo "  🔒  SSL:  Let's Encrypt (auto-renews)"
+if [ "$IS_IP" = true ]; then
+  echo "  🌐  API:  http://$DOMAIN"
+  echo "  ⚠️   HTTP only (no SSL on raw IP)"
+else
+  echo "  🌐  API:  https://$DOMAIN"
+  echo "  🔒  SSL:  Let's Encrypt (auto-renews)"
+fi
 echo "  📋  Logs: docker compose -f docker-compose.prod.yml logs -f"
 echo "  ════════════════════════════════════════════════"
 echo ""
-echo "  Next: Set VITE_API_URL=https://$DOMAIN in Vercel"
+if [ "$IS_IP" = true ]; then
+  echo "  Next: Set VITE_API_URL=http://$DOMAIN in Vercel"
+else
+  echo "  Next: Set VITE_API_URL=https://$DOMAIN in Vercel"
+fi
 echo ""
 
