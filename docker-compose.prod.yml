@@ -111,7 +111,7 @@ services:
       dockerfile: api-gateway/Dockerfile
     restart: always
     volumes:
-      - ./backend/api-gateway/src/main/resources/application-prod.yml:/app/BOOT-INF/classes/application-prod.yml:ro
+      - ./backend/api-gateway/src/main/resources/application-prod.yml:/app/config/application-prod.yml:ro
     environment:
       SPRING_PROFILES_ACTIVE: prod
       JWT_SECRET: ${JWT_SECRET}
