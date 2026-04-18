@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.math.RoundingMode;
+import java.util.ArrayList;
 import java.util.List;
 
 @Slf4j
@@ -62,11 +63,29 @@ public class TechnicalAnalysisEngine {
     }
 
     public BigDecimal[] calculateMACD(List<BigDecimal> prices) {
-        BigDecimal ema12 = calculateEMA(prices, 12);
-        BigDecimal ema26 = calculateEMA(prices, 26);
-        if (ema12 == null || ema26 == null) return null;
-        BigDecimal macdLine = ema12.subtract(ema26);
-        BigDecimal signal = macdLine.multiply(BigDecimal.valueOf(0.20), MC);
+        if (prices.size() < 35) return null; // need at least 26 + 9
+        // Build MACD line history: EMA12 - EMA26 for each point from index 25 onward
+        BigDecimal multiplier12 = TWO.divide(BigDecimal.valueOf(13), MC);
+        BigDecimal multiplier26 = TWO.divide(BigDecimal.valueOf(27), MC);
+        // Seed EMAs with SMA of first period
+        BigDecimal ema12 = prices.subList(0, 12).stream().reduce(BigDecimal.ZERO, BigDecimal::add)
+            .divide(BigDecimal.valueOf(12), MC);
+        BigDecimal ema26 = prices.subList(0, 26).stream().reduce(BigDecimal.ZERO, BigDecimal::add)
+            .divide(BigDecimal.valueOf(26), MC);
+        for (int i = 12; i < 26; i++) {
+            ema12 = prices.get(i).subtract(ema12).multiply(multiplier12, MC).add(ema12);
+        }
+        // Collect MACD line values starting from index 25
+        List<BigDecimal> macdHistory = new ArrayList<>();
+        for (int i = 26; i < prices.size(); i++) {
+            ema12 = prices.get(i).subtract(ema12).multiply(multiplier12, MC).add(ema12);
+            ema26 = prices.get(i).subtract(ema26).multiply(multiplier26, MC).add(ema26);
+            macdHistory.add(ema12.subtract(ema26));
+        }
+        // Signal line = 9-period EMA of MACD history
+        BigDecimal signal = calculateEMA(macdHistory, 9);
+        if (signal == null) return null;
+        BigDecimal macdLine = macdHistory.get(macdHistory.size() - 1);
         BigDecimal histogram = macdLine.subtract(signal);
         return new BigDecimal[]{
             macdLine.setScale(4, RoundingMode.HALF_UP),
@@ -208,17 +227,19 @@ public class TechnicalAnalysisEngine {
     }
 
     private BigDecimal[] calculateAroon(List<BigDecimal> highs, List<BigDecimal> lows, int period) {
-        if (highs.size() < period) return null;
-        List<BigDecimal> hSlice = highs.subList(highs.size() - period, highs.size());
-        List<BigDecimal> lSlice = lows.subList(lows.size() - period, lows.size());
+        if (highs.size() < period + 1) return null;
+        List<BigDecimal> hSlice = highs.subList(highs.size() - period - 1, highs.size());
+        List<BigDecimal> lSlice = lows.subList(lows.size() - period - 1, lows.size());
+        // Find index of highest high and lowest low in the slice (most recent = index period)
         int highIdx = 0, lowIdx = 0;
-        for (int i = 1; i < period; i++) {
+        for (int i = 1; i <= period; i++) {
             if (hSlice.get(i).compareTo(hSlice.get(highIdx)) > 0) highIdx = i;
             if (lSlice.get(i).compareTo(lSlice.get(lowIdx)) < 0) lowIdx = i;
         }
+        // periods since last high/low = (period - highIdx), so Aroon = 100 * highIdx / period
         return new BigDecimal[]{
-            BigDecimal.valueOf(100.0 * highIdx / (period - 1)).setScale(1, RoundingMode.HALF_UP),
-            BigDecimal.valueOf(100.0 * lowIdx  / (period - 1)).setScale(1, RoundingMode.HALF_UP)
+            BigDecimal.valueOf(100.0 * highIdx / period).setScale(1, RoundingMode.HALF_UP),
+            BigDecimal.valueOf(100.0 * lowIdx  / period).setScale(1, RoundingMode.HALF_UP)
         };
     }
 }
