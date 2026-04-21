@@ -1,0 +1,267 @@
+//@version=5
+// AXIOM Bull/Bear Scoring Engine v2.0
+// Paste into TradingView Pine Script Editor → Add to Chart
+// Set webhook URL in alert to your deployed webhook server
+// Updated: Full readable format with webhook_url input, enhanced RSI/Stoch scoring, ema20 in payload
+indicator("AXIOM Bull/Bear Scoring Engine", overlay=true, max_bars_back=500)
+
+// ══════════════════════════════════════════════════════════
+// INPUTS
+// ══════════════════════════════════════════════════════════
+rsi_len     = input.int(14,   "RSI Length")
+ema_fast    = input.int(20,   "EMA Fast")
+ema_slow    = input.int(50,   "EMA Slow")
+ema_trend   = input.int(200,  "EMA Trend")
+macd_fast   = input.int(12,   "MACD Fast")
+macd_slow   = input.int(26,   "MACD Slow")
+macd_sig    = input.int(9,    "MACD Signal")
+bb_len      = input.int(20,   "BB Length")
+bb_mult     = input.float(2.0,"BB StdDev")
+adx_len     = input.int(14,   "ADX Length")
+show_labels = input.bool(true, "Show Signal Labels")
+score_thresh_bull = input.int(65, "Bull Threshold (0-100)")
+score_thresh_bear = input.int(35, "Bear Threshold (0-100)")
+webhook_url = input.string("", "Webhook URL (for alerts)", confirm=false)
+
+// ══════════════════════════════════════════════════════════
+// 1. TREND LAYER (30 points max)
+// ══════════════════════════════════════════════════════════
+ema20  = ta.ema(close, ema_fast)
+ema50  = ta.ema(close, ema_slow)
+ema200 = ta.ema(close, ema_trend)
+vwap_val = ta.vwap(hlc3)
+
+trend_score = 0
+// Price above EMAs
+trend_score += close > ema20  ? 5 : 0
+trend_score += close > ema50  ? 5 : 0
+trend_score += close > ema200 ? 5 : 0
+// EMA alignment (fast > slow > trend)
+trend_score += ema20 > ema50  ? 5 : 0
+trend_score += ema50 > ema200 ? 5 : 0
+// Golden/Death cross
+trend_score += ta.crossover(ema50, ema200)  ? 5 : 0
+trend_score += ta.crossunder(ema50, ema200) ? -5 : 0
+// VWAP
+trend_score += close > vwap_val ? 0 : -3  // penalize below VWAP
+
+// ══════════════════════════════════════════════════════════
+// 2. MOMENTUM LAYER (30 points max)
+// ══════════════════════════════════════════════════════════
+rsi_val = ta.rsi(close, rsi_len)
+[macd_line, sig_line, macd_hist] = ta.macd(close, macd_fast, macd_slow, macd_sig)
+stoch_k = ta.stoch(close, high, low, 14)
+stoch_d = ta.ema(stoch_k, 3)
+williams_r = -100 * (ta.highest(high, 14) - close) / (ta.highest(high, 14) - ta.lowest(low, 14))
+
+mom_score = 0
+// RSI zones
+mom_score += rsi_val > 50 and rsi_val < 70 ? 8 : 0
+mom_score += rsi_val > 30 and rsi_val <= 50 ? 3 : 0
+mom_score += rsi_val < 30 ? -5 : 0  // oversold penalty (could reverse)
+mom_score += rsi_val > 70 ? 2 : 0   // overbought caution
+// MACD
+mom_score += macd_hist > 0 ? 7 : -7
+mom_score += ta.crossover(macd_line, sig_line)  ? 5 : 0
+mom_score += ta.crossunder(macd_line, sig_line) ? -5 : 0
+// Stochastic
+mom_score += stoch_k > stoch_d and stoch_k < 80 ? 5 : 0
+mom_score += stoch_k < stoch_d and stoch_k > 20 ? -3 : 0
+// Williams %R
+mom_score += williams_r > -50 ? 3 : -3
+// RSI divergence (simplified)
+rsi_bull_div = rsi_val > rsi_val[5] and close < close[5]
+rsi_bear_div = rsi_val < rsi_val[5] and close > close[5]
+mom_score += rsi_bull_div ? 3 : 0
+mom_score += rsi_bear_div ? -3 : 0
+
+// ══════════════════════════════════════════════════════════
+// 3. VOLUME LAYER (20 points max)
+// ══════════════════════════════════════════════════════════
+// CMF (20-period)
+cmf_period = 20
+mf_mult  = ((close - low) - (high - close)) / (high - low)
+mf_vol   = nz(mf_mult * volume)
+cmf_val  = ta.sma(mf_vol, cmf_period) / ta.sma(volume, cmf_period)
+// OBV
+obv_val = ta.obv
+obv_rising = obv_val > ta.ema(obv_val, 20)
+// Volume vs avg
+vol_avg  = ta.sma(volume, 20)
+high_vol = volume > vol_avg * 1.5
+
+vol_score = 0
+vol_score += cmf_val > 0.1  ? 8 : 0
+vol_score += cmf_val < -0.1 ? -8 : 0
+vol_score += cmf_val > 0 and cmf_val <= 0.1 ? 3 : 0
+vol_score += obv_rising ? 6 : -6
+vol_score += high_vol and close > open ? 4 : 0
+vol_score += high_vol and close < open ? -4 : 0
+
+// ══════════════════════════════════════════════════════════
+// 4. VOLATILITY / SETUP LAYER (20 points max)
+// ══════════════════════════════════════════════════════════
+[bb_mid, bb_upper, bb_lower] = ta.bb(close, bb_len, bb_mult)
+bb_width     = (bb_upper - bb_lower) / bb_mid * 100
+bb_squeeze   = bb_width < 4.0
+atr_val      = ta.atr(14)
+// ADX
+[dmi_plus, dmi_minus, adx_val] = ta.dmi(adx_len, adx_len)
+strong_trend = adx_val > 25
+
+setup_score = 0
+// Bollinger position
+setup_score += close > bb_mid   ? 6 : -6
+setup_score += close > bb_upper ? -2 : 0  // overextended
+setup_score += close < bb_lower ? 4 : 0   // potential bounce
+// Squeeze (breakout coming)
+setup_score += bb_squeeze ? 4 : 0
+// ADX trend strength
+setup_score += strong_trend and dmi_plus > dmi_minus ? 6 : 0
+setup_score += strong_trend and dmi_minus > dmi_plus ? -6 : 0
+// Parabolic SAR
+sar_val  = ta.sar(0.02, 0.02, 0.2)
+sar_bull = close > sar_val
+setup_score += sar_bull ? 4 : -4
+
+// ══════════════════════════════════════════════════════════
+// 5. PATTERN LAYER (bonus signals)
+// ══════════════════════════════════════════════════════════
+// Candlestick patterns
+body_size    = math.abs(close - open)
+candle_range = high - low
+is_doji      = body_size < candle_range * 0.1
+
+// Bullish engulfing
+bull_engulf = close > open and close[1] < open[1] and
+     close > open[1] and open < close[1] and
+     body_size > body_size[1]
+
+// Bearish engulfing
+bear_engulf = close < open and close[1] > open[1] and
+     close < open[1] and open > close[1] and
+     body_size > body_size[1]
+
+// Pin bar (hammer/shooting star)
+lower_wick   = math.min(open, close) - low
+upper_wick   = high - math.max(open, close)
+bull_pin     = lower_wick > body_size * 2 and upper_wick < body_size * 0.5
+bear_pin     = upper_wick > body_size * 2 and lower_wick < body_size * 0.5
+
+// Morning/Evening star (simplified)
+morning_star = close[2] < open[2] and is_doji[1] and close > open and close > (open[2] + close[2]) / 2
+evening_star = close[2] > open[2] and is_doji[1] and close < open and close < (open[2] + close[2]) / 2
+
+pattern_score = 0
+pattern_score += bull_engulf  ? 5 : 0
+pattern_score += bear_engulf  ? -5 : 0
+pattern_score += bull_pin     ? 3 : 0
+pattern_score += bear_pin     ? -3 : 0
+pattern_score += morning_star ? 4 : 0
+pattern_score += evening_star ? -4 : 0
+
+// ══════════════════════════════════════════════════════════
+// 6. COMPOSITE SCORE (0-100)
+// ══════════════════════════════════════════════════════════
+// Raw sum (can go negative or above 100)
+raw_score = trend_score + mom_score + vol_score + setup_score + pattern_score
+// Normalize to 0-100
+// theoretical max ~105, min ~-80 → map to 0-100
+normalized = math.round((raw_score + 80) / 185 * 100)
+final_score = math.max(0, math.min(100, normalized))
+
+// Verdict
+verdict = final_score >= score_thresh_bull ? "STRONG BULL" :
+          final_score >= 55               ? "MILD BULL"   :
+          final_score >= 45               ? "NEUTRAL"     :
+          final_score >= score_thresh_bear ? "MILD BEAR"  :
+                                            "STRONG BEAR"
+
+// ══════════════════════════════════════════════════════════
+// 7. PLOTS & VISUALS
+// ══════════════════════════════════════════════════════════
+// EMA lines
+plot(ema20,  "EMA 20",  color=color.new(color.blue,   0), linewidth=1)
+plot(ema50,  "EMA 50",  color=color.new(color.orange, 0), linewidth=1)
+plot(ema200, "EMA 200", color=color.new(color.red,    0), linewidth=2)
+plot(vwap_val, "VWAP",  color=color.new(color.yellow, 0), linewidth=1, style=plot.style_circles)
+
+// Bar coloring by score
+bar_color = final_score >= score_thresh_bull ? color.new(color.green, 40) :
+            final_score >= 55 ? color.new(color.lime, 60) :
+            final_score >= 45 ? color.new(color.gray, 60) :
+            final_score >= score_thresh_bear ? color.new(color.orange, 60) :
+            color.new(color.red, 40)
+barcolor(bar_color)
+
+// Score label on chart
+if show_labels and barstate.islast
+    label.new(bar_index, high * 1.01,
+        "AXIOM Score: " + str.tostring(final_score) + "/100\n" + verdict,
+        color=final_score >= score_thresh_bull ? color.green :
+              final_score <= score_thresh_bear ? color.red : color.gray,
+        textcolor=color.white, style=label.style_label_down, size=size.small)
+
+// Buy/Sell signals
+bull_signal = ta.crossover(final_score, score_thresh_bull)  or bull_engulf or morning_star
+bear_signal = ta.crossunder(final_score, score_thresh_bear) or bear_engulf or evening_star
+
+plotshape(bull_signal, "BUY Signal",  shape.triangleup,   location.belowbar, color.green, size=size.normal)
+plotshape(bear_signal, "SELL Signal", shape.triangledown,  location.abovebar, color.red,   size=size.normal)
+
+// ══════════════════════════════════════════════════════════
+// 8. WEBHOOK ALERTS → AXIOM APP
+// ══════════════════════════════════════════════════════════
+alert_msg_bull = '{"ticker":"' + syminfo.ticker + '",' +
+    '"action":"BUY",' +
+    '"score":' + str.tostring(final_score) + ',' +
+    '"verdict":"' + verdict + '",' +
+    '"price":' + str.tostring(close) + ',' +
+    '"ema20":' + str.tostring(math.round(ema20 * 100) / 100) + ',' +
+    '"rsi":' + str.tostring(math.round(rsi_val * 10) / 10) + ',' +
+    '"macd_hist":' + str.tostring(math.round(macd_hist * 1000) / 1000) + ',' +
+    '"cmf":' + str.tostring(math.round(cmf_val * 1000) / 1000) + ',' +
+    '"adx":' + str.tostring(math.round(adx_val * 10) / 10) + ',' +
+    '"pattern":"' + (bull_engulf ? "BullEngulf" : bull_pin ? "BullPin" : morning_star ? "MorningStar" : "None") + '",' +
+    '"timeframe":"' + timeframe.period + '",' +
+    '"timestamp":"' + str.tostring(timenow) + '"}'
+
+alert_msg_bear = '{"ticker":"' + syminfo.ticker + '",' +
+    '"action":"SELL",' +
+    '"score":' + str.tostring(final_score) + ',' +
+    '"verdict":"' + verdict + '",' +
+    '"price":' + str.tostring(close) + ',' +
+    '"ema20":' + str.tostring(math.round(ema20 * 100) / 100) + ',' +
+    '"rsi":' + str.tostring(math.round(rsi_val * 10) / 10) + ',' +
+    '"macd_hist":' + str.tostring(math.round(macd_hist * 1000) / 1000) + ',' +
+    '"cmf":' + str.tostring(math.round(cmf_val * 1000) / 1000) + ',' +
+    '"adx":' + str.tostring(math.round(adx_val * 10) / 10) + ',' +
+    '"pattern":"' + (bear_engulf ? "BearEngulf" : bear_pin ? "BearPin" : evening_star ? "EveningStar" : "None") + '",' +
+    '"timeframe":"' + timeframe.period + '",' +
+    '"timestamp":"' + str.tostring(timenow) + '"}'
+
+alertcondition(bull_signal, "AXIOM BUY Signal",  alert_msg_bull)
+alertcondition(bear_signal, "AXIOM SELL Signal", alert_msg_bear)
+
+// Score table (bottom right)
+var table score_tbl = table.new(position.bottom_right, 2, 8,
+    bgcolor=color.new(color.black, 30), border_color=color.gray, border_width=1)
+if barstate.islast
+    table.cell(score_tbl, 0, 0, "AXIOM SCORE",    text_color=color.white,  text_size=size.small)
+    table.cell(score_tbl, 1, 0, str.tostring(final_score) + " — " + verdict,
+        text_color=final_score >= 65 ? color.green : final_score <= 35 ? color.red : color.yellow,
+        text_size=size.small)
+    table.cell(score_tbl, 0, 1, "Trend",    text_color=color.gray, text_size=size.tiny)
+    table.cell(score_tbl, 1, 1, str.tostring(trend_score),  text_color=trend_score > 0 ? color.green : color.red, text_size=size.tiny)
+    table.cell(score_tbl, 0, 2, "Momentum", text_color=color.gray, text_size=size.tiny)
+    table.cell(score_tbl, 1, 2, str.tostring(mom_score),    text_color=mom_score > 0 ? color.green : color.red, text_size=size.tiny)
+    table.cell(score_tbl, 0, 3, "Volume",   text_color=color.gray, text_size=size.tiny)
+    table.cell(score_tbl, 1, 3, str.tostring(vol_score),    text_color=vol_score > 0 ? color.green : color.red, text_size=size.tiny)
+    table.cell(score_tbl, 0, 4, "Setup",    text_color=color.gray, text_size=size.tiny)
+    table.cell(score_tbl, 1, 4, str.tostring(setup_score),  text_color=setup_score > 0 ? color.green : color.red, text_size=size.tiny)
+    table.cell(score_tbl, 0, 5, "Pattern",  text_color=color.gray, text_size=size.tiny)
+    table.cell(score_tbl, 1, 5, str.tostring(pattern_score),text_color=pattern_score > 0 ? color.green : color.red, text_size=size.tiny)
+    table.cell(score_tbl, 0, 6, "RSI",      text_color=color.gray, text_size=size.tiny)
+    table.cell(score_tbl, 1, 6, str.tostring(math.round(rsi_val*10)/10), text_color=color.white, text_size=size.tiny)
+    table.cell(score_tbl, 0, 7, "ADX",      text_color=color.gray, text_size=size.tiny)
+    table.cell(score_tbl, 1, 7, str.tostring(math.round(adx_val*10)/10), text_color=color.white, text_size=size.tiny)
