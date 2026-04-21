@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store/useStore';
 import TradingViewTickerTape from './TradingViewTickerTape';
 import TradingViewChart from './TradingViewChart';
@@ -107,7 +108,12 @@ export default function AnalysisDashboard() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#00ff88', boxShadow: '0 0 8px #00ff88', display: 'inline-block' }} />
             <span style={{ fontSize: 12, fontWeight: 900, letterSpacing: 3, background: 'linear-gradient(90deg,#00ff88,#00d4ff)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>AXIOM</span>
-            {user && <span style={{ fontSize: 9, color: '#2a4050', letterSpacing: 1 }}>· {user.email || user.name || 'Trader'}</span>}
+            {user && <span style={{ fontSize: 9, color: '#2a4050', letterSpacing: 1 }}>· {user.username || user.email || 'Trader'}</span>}
+            {user?.role === 'ADMIN' && (
+              <span style={{ padding: '2px 8px', background: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.4)', borderRadius: 99, fontSize: 8, color: '#a78bfa', fontWeight: 700, letterSpacing: 1 }}>
+                👑 ADMIN
+              </span>
+            )}
           </div>
           <button onClick={async () => { await logout(); navigate('/'); }}
             style={{ padding: '6px 14px', background: 'transparent', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 7, color: '#2a4050', fontSize: 9, fontFamily: 'inherit', cursor: 'pointer', letterSpacing: 1 }}>

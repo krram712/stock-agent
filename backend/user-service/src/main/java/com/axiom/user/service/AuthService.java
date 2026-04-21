@@ -54,7 +54,8 @@ public class AuthService {
     }
 
     public AuthResponse login(LoginRequest req) {
-        User user = userRepository.findByEmail(req.getEmail())
+        // Support login by email OR username
+        User user = userRepository.findByEmailOrUsername(req.getEmail(), req.getEmail())
             .orElseThrow(() -> new IllegalArgumentException("Invalid credentials"));
         if (!passwordEncoder.matches(req.getPassword(), user.getPasswordHash())) {
             throw new IllegalArgumentException("Invalid credentials");
@@ -93,6 +94,7 @@ public class AuthService {
         UserDto dto = new UserDto();
         dto.setId(user.getId().toString());
         dto.setEmail(user.getEmail());
+        dto.setUsername(user.getUsername());
         dto.setFirstName(user.getFirstName());
         dto.setLastName(user.getLastName());
         dto.setRole(user.getRole().name());

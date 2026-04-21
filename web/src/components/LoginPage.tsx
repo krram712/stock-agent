@@ -135,11 +135,17 @@ export default function LoginPage() {
 
             {/* Demo shortcut */}
             <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid rgba(255,255,255,0.04)' }}>
-              <div style={{ fontSize: 9, letterSpacing: 2, color: '#1a2a35', textAlign: 'center', marginBottom: 10 }}>DEMO ACCESS</div>
-              <button onClick={() => { setEmail('demo@axiom.ai'); setPassword('Demo1234!'); }}
-                style={{ width: '100%', padding: '9px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 7, color: '#2a4050', fontSize: 10, fontFamily: 'inherit', cursor: 'pointer', letterSpacing: 1 }}>
-                USE DEMO CREDENTIALS
-              </button>
+              <div style={{ fontSize: 9, letterSpacing: 2, color: '#1a2a35', textAlign: 'center', marginBottom: 10 }}>QUICK ACCESS</div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => { setEmail('raghu'); setPassword('bigsky3016'); }}
+                  style={{ flex: 1, padding: '9px', background: 'rgba(167,139,250,0.06)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: 7, color: '#a78bfa', fontSize: 10, fontFamily: 'inherit', cursor: 'pointer', letterSpacing: 1 }}>
+                  👑 ADMIN LOGIN
+                </button>
+                <button onClick={() => { setEmail('demo@axiom.ai'); setPassword('Demo1234!'); }}
+                  style={{ flex: 1, padding: '9px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 7, color: '#2a4050', fontSize: 10, fontFamily: 'inherit', cursor: 'pointer', letterSpacing: 1 }}>
+                  DEMO USER
+                </button>
+              </div>
             </div>
           </div>
 
