@@ -10,7 +10,8 @@ export default function LoginPage() {
   const [tab, setTab] = useState<'login' | 'register'>(initialTab);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [error, setError] = useState('');
 
   const { login, register, isLoading, user } = useStore();
@@ -27,12 +28,14 @@ export default function LoginPage() {
       if (tab === 'login') {
         await login(email, password);
       } else {
-        if (!name.trim()) { setError('Name is required'); return; }
-        await register({ name, email, password });
+        if (!firstName.trim()) { setError('First name is required'); return; }
+        if (password.length < 8) { setError('Password must be at least 8 characters'); return; }
+        await register({ name: `${firstName} ${lastName}`.trim(), email, password });
       }
       navigate('/dashboard');
     } catch (err: any) {
-      setError(err?.response?.data?.message || (tab === 'login' ? 'Invalid credentials' : 'Registration failed'));
+      const msg = err?.response?.data?.message || err?.response?.data || '';
+      setError(msg || (tab === 'login' ? 'Invalid credentials. Check email/username and password.' : 'Registration failed. Email may already be in use.'));
     }
   };
 
@@ -87,7 +90,7 @@ export default function LoginPage() {
           {/* Tab switcher */}
           <div style={{ display: 'flex', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 10, padding: 4, marginBottom: 24 }}>
             {(['login', 'register'] as const).map(t => (
-              <button key={t} onClick={() => { setTab(t); setError(''); }}
+              <button key={t} onClick={() => { setTab(t); setError(''); setPassword(''); }}
                 style={{ flex: 1, padding: '9px', borderRadius: 7, fontSize: 11, fontFamily: 'inherit', fontWeight: 700, cursor: 'pointer', border: 'none', letterSpacing: 1,
                   background: tab === t ? 'rgba(0,255,136,0.1)' : 'transparent',
                   color: tab === t ? '#00ff88' : '#2a4050',
@@ -103,9 +106,18 @@ export default function LoginPage() {
             <form onSubmit={handleSubmit}>
               {tab === 'register' && (
                 <div style={{ marginBottom: 16 }}>
-                  <label style={labelStyle}>FULL NAME</label>
-                  <input className="axiom-input" style={inputStyle} type="text" placeholder="John Doe"
-                    value={name} onChange={e => setName(e.target.value)} required autoComplete="name" />
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <div style={{ flex: 1 }}>
+                      <label style={labelStyle}>FIRST NAME *</label>
+                      <input className="axiom-input" style={inputStyle} type="text" placeholder="John"
+                        value={firstName} onChange={e => setFirstName(e.target.value)} required autoComplete="given-name" />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label style={labelStyle}>LAST NAME</label>
+                      <input className="axiom-input" style={inputStyle} type="text" placeholder="Doe"
+                        value={lastName} onChange={e => setLastName(e.target.value)} autoComplete="family-name" />
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -116,9 +128,14 @@ export default function LoginPage() {
               </div>
 
               <div style={{ marginBottom: 20 }}>
-                <label style={labelStyle}>PASSWORD</label>
+                <label style={labelStyle}>PASSWORD {tab === 'register' && <span style={{ color: '#1a2a35' }}>(min 8 chars)</span>}</label>
                 <input className="axiom-input" style={inputStyle} type="password" placeholder="••••••••"
-                  value={password} onChange={e => setPassword(e.target.value)} required autoComplete={tab === 'login' ? 'current-password' : 'new-password'} />
+                  value={password} onChange={e => setPassword(e.target.value)} required minLength={tab === 'register' ? 8 : undefined} autoComplete={tab === 'login' ? 'current-password' : 'new-password'} />
+                {tab === 'register' && password.length > 0 && password.length < 8 && (
+                  <div style={{ fontSize: 10, color: '#fb923c', marginTop: 4 }}>
+                    {8 - password.length} more character{8 - password.length !== 1 ? 's' : ''} needed
+                  </div>
+                )}
               </div>
 
               {error && (
@@ -151,11 +168,11 @@ export default function LoginPage() {
 
           {/* Switch tab link */}
           <div style={{ textAlign: 'center', marginTop: 16, fontSize: 11, color: '#2a4050' }}>
-            {tab === 'login' ? (
-              <>Don't have an account? <span onClick={() => { setTab('register'); setError(''); }} style={{ color: '#00d4ff', cursor: 'pointer' }}>Register free</span></>
-            ) : (
-              <>Already have an account? <span onClick={() => { setTab('login'); setError(''); }} style={{ color: '#00d4ff', cursor: 'pointer' }}>Log in</span></>
-            )}
+          {tab === 'login' ? (
+            <>Don't have an account? <span onClick={() => { setTab('register'); setError(''); setPassword(''); }} style={{ color: '#00d4ff', cursor: 'pointer' }}>Register free</span></>
+          ) : (
+            <>Already have an account? <span onClick={() => { setTab('login'); setError(''); setPassword(''); }} style={{ color: '#00d4ff', cursor: 'pointer' }}>Log in</span></>
+          )}
           </div>
 
           <div style={{ textAlign: 'center', marginTop: 24, fontSize: 9, color: '#0e1e26', letterSpacing: 1 }}>

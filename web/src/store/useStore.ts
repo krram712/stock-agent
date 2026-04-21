@@ -30,18 +30,33 @@ export const useStore = create<AppState>()(
 
       login: async (email, password) => {
         set({ isLoading: true });
-        const res = await api.auth.login({ email, password });
-        localStorage.setItem('accessToken', res.data.accessToken);
-        localStorage.setItem('refreshToken', res.data.refreshToken);
-        set({ user: res.data.user, accessToken: res.data.accessToken, isLoading: false });
+        try {
+          const res = await api.auth.login({ email, password });
+          localStorage.setItem('accessToken', res.data.accessToken);
+          localStorage.setItem('refreshToken', res.data.refreshToken);
+          set({ user: res.data.user, accessToken: res.data.accessToken, isLoading: false });
+        } catch (err) {
+          set({ isLoading: false });
+          throw err;
+        }
       },
 
       register: async (data) => {
         set({ isLoading: true });
-        const res = await api.auth.register(data);
-        localStorage.setItem('accessToken', res.data.accessToken);
-        localStorage.setItem('refreshToken', res.data.refreshToken);
-        set({ user: res.data.user, accessToken: res.data.accessToken, isLoading: false });
+        try {
+          // Split name into firstName / lastName to match backend RegisterRequest
+          const nameParts = (data.name || '').trim().split(' ');
+          const firstName = nameParts[0] || data.name || '';
+          const lastName  = nameParts.slice(1).join(' ') || '';
+          const payload   = { firstName, lastName, email: data.email, password: data.password };
+          const res = await api.auth.register(payload);
+          localStorage.setItem('accessToken', res.data.accessToken);
+          localStorage.setItem('refreshToken', res.data.refreshToken);
+          set({ user: res.data.user, accessToken: res.data.accessToken, isLoading: false });
+        } catch (err) {
+          set({ isLoading: false });
+          throw err;
+        }
       },
 
       logout: async () => {
