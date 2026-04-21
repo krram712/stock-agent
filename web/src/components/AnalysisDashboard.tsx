@@ -53,7 +53,8 @@ function SectionCard({ sectionKey, data }: { sectionKey: string; data: any }) {
 }
 
 export default function AnalysisDashboard() {
-  const { runAnalysis, isAnalyzing, analysisError, currentAnalysis, clearAnalysisError } = useStore();
+  const { runAnalysis, isAnalyzing, analysisError, currentAnalysis, clearAnalysisError, logout, user } = useStore();
+  const navigate = useNavigate();
   const [ticker, setTicker] = useState('');
   const [horizon, setHorizon] = useState('weekly');
   const [customPrompt, setCustomPrompt] = useState('');
@@ -101,14 +102,26 @@ export default function AnalysisDashboard() {
 
       <div style={{ position: 'relative', zIndex: 1, maxWidth: 1200, margin: '0 auto', padding: '28px 16px 48px' }}>
 
+        {/* Top bar with user info + logout */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, padding: '8px 0' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#00ff88', boxShadow: '0 0 8px #00ff88', display: 'inline-block' }} />
+            <span style={{ fontSize: 12, fontWeight: 900, letterSpacing: 3, background: 'linear-gradient(90deg,#00ff88,#00d4ff)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>AXIOM</span>
+            {user && <span style={{ fontSize: 9, color: '#2a4050', letterSpacing: 1 }}>· {user.email || user.name || 'Trader'}</span>}
+          </div>
+          <button onClick={async () => { await logout(); navigate('/'); }}
+            style={{ padding: '6px 14px', background: 'transparent', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 7, color: '#2a4050', fontSize: 9, fontFamily: 'inherit', cursor: 'pointer', letterSpacing: 1 }}>
+            LOG OUT
+          </button>
+        </div>
+
         {/* Header */}
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 8 }}>
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#00ff88', boxShadow: '0 0 8px #00ff88', display: 'inline-block' }} />
             <span style={{ fontSize: 9, letterSpacing: 4, color: '#00ff88' }}>AXIOM TRADING INTELLIGENCE</span>
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#00ff88', boxShadow: '0 0 8px #00ff88', display: 'inline-block' }} />
-          </div>
-          <h1 style={{ margin: '0 0 6px', fontSize: 'clamp(22px,4vw,36px)', fontWeight: 800, letterSpacing: -1, background: 'linear-gradient(120deg,#00ff88 0%,#00d4ff 45%,#a78bfa 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+          </div>          <h1 style={{ margin: '0 0 6px', fontSize: 'clamp(22px,4vw,36px)', fontWeight: 800, letterSpacing: -1, background: 'linear-gradient(120deg,#00ff88 0%,#00d4ff 45%,#a78bfa 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
             AI Stock Analysis Agent
           </h1>
           <p style={{ margin: 0, fontSize: 10, color: '#2a4050', letterSpacing: 2 }}>TECHNICAL · FUNDAMENTAL · ENTRY/EXIT · TRADE PLAN</p>
