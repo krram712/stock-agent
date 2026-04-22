@@ -340,20 +340,21 @@ public class MarketDataService {
             .retrieve().bodyToMono(JsonNode.class).block(Duration.ofSeconds(15));
         JsonNode ts = root.path("Time Series (Daily)");
         if (ts.isMissingNode()) throw new RuntimeException("No daily data");
-        List<BigDecimal> closes = new ArrayList<>(), highs = new ArrayList<>(),
-            lows = new ArrayList<>(), vols = new ArrayList<>();
+        List<BigDecimal> closes = new ArrayList<>(), opens = new ArrayList<>(),
+            highs = new ArrayList<>(), lows = new ArrayList<>(), vols = new ArrayList<>();
         List<String> dates = new ArrayList<>();
         ts.fieldNames().forEachRemaining(dates::add);
         Collections.sort(dates);
         int start = Math.max(0, dates.size() - limit);
         for (int i = start; i < dates.size(); i++) {
             JsonNode day = ts.path(dates.get(i));
+            opens.add(new BigDecimal(day.path("1. open").asText("0")));
             closes.add(new BigDecimal(day.path("4. close").asText("0")));
             highs.add(new BigDecimal(day.path("2. high").asText("0")));
             lows.add(new BigDecimal(day.path("3. low").asText("0")));
             vols.add(new BigDecimal(day.path("5. volume").asText("0")));
         }
-        return Map.of("close", closes, "high", highs, "low", lows, "volume", vols);
+        return Map.of("close", closes, "open", opens, "high", highs, "low", lows, "volume", vols);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -417,12 +418,13 @@ public class MarketDataService {
         int limit = switch (range) { case "1W"->7; case "1M"->22; case "3M"->66; case "6M"->130; default->252; };
         Map<String, List<BigDecimal>> ohlcv = fetchDailyOHLCVAlphaVantage(ticker, limit);
         List<BigDecimal> closes = ohlcv.get("close");
+        List<BigDecimal> opens  = ohlcv.get("open");
         List<Map<String, Object>> candles = new ArrayList<>();
         long now = System.currentTimeMillis();
         for (int i = 0; i < closes.size(); i++) {
             Map<String, Object> c = new HashMap<>();
             c.put("t", now - (long)(closes.size() - i) * 86400000L);
-            c.put("o", ohlcv.get("close").get(Math.max(0, i-1)));
+            c.put("o", opens.get(i));
             c.put("h", ohlcv.get("high").get(i));
             c.put("l", ohlcv.get("low").get(i));
             c.put("c", closes.get(i));
@@ -435,7 +437,7 @@ public class MarketDataService {
 
     private Map<String, Object> buildDemoHistory(String ticker, String interval, String range) {
         double price = buildDemoQuote(ticker).getPrice().doubleValue();
-        int bars = switch (range) { case "1W"->7; case "1M"->30; case "3M"->90; case "6M"->180; default->252; };
+        int bars = switch (range) { case "1D"->1; case "5D"->5; case "1W"->7; case "1M"->30; case "3M"->90; case "6M"->180; case "1Y"->252; case "5Y"->1260; default->252; };
         List<Map<String, Object>> candles = new ArrayList<>();
         double p = price * 0.85;
         for (int i = 0; i < bars; i++) {
