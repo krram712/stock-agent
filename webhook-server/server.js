@@ -85,5 +85,22 @@ app.get('/stream', (req, res) => {
 app.get('/health', (req, res) => res.json({ ok: true, signals: signals.length }));
 
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => console.log(`AXIOM Webhook Server running on port ${PORT}`));
+const server = app.listen(PORT, () => {
+  console.log(`AXIOM Webhook Server running on port ${PORT}`);
+  // Notify PM2 that the process is ready (used with wait_ready: true)
+  if (process.send) process.send('ready');
+});
+
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`[AXIOM] Port ${PORT} is already in use. Set the PORT env variable to use a different port.`);
+    console.error(`[AXIOM] Example: PORT=3002 pm2 start server.js --name axiom-webhook`);
+  } else {
+    console.error('[AXIOM] Server error:', err);
+  }
+  process.exit(1);
+});
+
+process.on('SIGINT',  () => { server.close(() => process.exit(0)); });
+process.on('SIGTERM', () => { server.close(() => process.exit(0)); });
 
