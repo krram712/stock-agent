@@ -20,7 +20,7 @@ export interface TVSignal {
   timestamp: string;
 }
 
-const WEBHOOK_BASE = (import.meta as any).env?.VITE_WEBHOOK_URL || 'http://localhost:3001';
+const WEBHOOK_BASE = (import.meta as any).env?.VITE_WEBHOOK_URL || '';
 
 export function useTradingViewSignals(ticker?: string) {
   const [signals, setSignals]       = useState<TVSignal[]>([]);

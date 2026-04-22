@@ -179,7 +179,7 @@ export default function AnalysisDashboard() {
             { id: 'watchlist', label: `👁 Watchlist${watchlists.length > 0 ? ` (${watchlists.length})` : ''}` },
           ] as const).map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-              style={{ padding: '8px 14px', background: 'transparent', border: 'none', borderBottom: activeTab === tab.id ? '2px solid #00ff88' : '2px solid transparent', color: activeTab === tab.id ? '#00ff88' : '#2a4050', fontSize: 11, fontFamily: 'inherit', fontWeight: 700, cursor: 'pointer', letterSpacing: 1, marginBottom: -1 }}>
+              style={{ padding: '8px 14px', background: 'transparent', border: 'none', borderBottom: activeTab === tab.id ? '2px solid #00ff88' : '2px solid transparent', color: activeTab === tab.id ? '#00ff88' : '#6b8a9a', fontSize: 11, fontFamily: 'inherit', fontWeight: 700, cursor: 'pointer', letterSpacing: 1, marginBottom: -1 }}>
               {tab.label}
             </button>
           ))}
