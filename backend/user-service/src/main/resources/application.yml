@@ -2,25 +2,24 @@ spring:
   application:
     name: user-service
   datasource:
-    url: jdbc:h2:mem:axiom_users;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
-    driver-class-name: org.h2.Driver
-    username: sa
-    password:
-  h2:
-    console:
-      enabled: true
-      path: /h2-console
+    url: ${DB_URL:jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:axiom_users}}
+    driver-class-name: org.postgresql.Driver
+    username: ${DB_USERNAME:axiom}
+    password: ${DB_PASSWORD:axiom}
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: update
     show-sql: false
-    database-platform: org.hibernate.dialect.H2Dialect
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    properties:
+      hibernate:
+        format_sql: false
 
 server:
   port: 8081
 
 jwt:
-  secret: axiom_jwt_secret_change_in_prod_min_256_bits_long_enough
+  secret: ${JWT_SECRET:axiom_jwt_secret_change_in_prod_min_256_bits_long_enough}
   access-token-expiry: 900000
   refresh-token-expiry: 604800000
 
@@ -30,3 +29,19 @@ management:
       exposure:
         include: health,info
 
+---
+spring:
+  config:
+    activate:
+      on-profile: dev
+  datasource:
+    url: jdbc:h2:mem:axiom_users;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
