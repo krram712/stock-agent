@@ -31,7 +31,10 @@ export const useStore = create<AppState>()(
       login: async (email, password) => {
         set({ isLoading: true });
         try {
-          const res = await api.auth.login({ email, password });
+          // Support both email and username login
+          const isEmail = email.includes('@');
+          const payload = isEmail ? { email, password } : { username: email, password };
+          const res = await api.auth.login(payload);
           localStorage.setItem('accessToken', res.data.accessToken);
           localStorage.setItem('refreshToken', res.data.refreshToken);
           set({ user: res.data.user, accessToken: res.data.accessToken, isLoading: false });
