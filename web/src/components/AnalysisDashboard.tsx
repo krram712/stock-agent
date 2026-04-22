@@ -87,6 +87,7 @@ export default function AnalysisDashboard() {
       <style>{`
         @media (max-width: 768px) {
           .axiom-two-col { grid-template-columns: 1fr !important; }
+          .axiom-tv-widgets { order: -1; }
           .axiom-verdict-row { flex-direction: column !important; }
           .axiom-verdict-row > div { min-width: 0 !important; }
           .axiom-ticker-input { width: 100% !important; font-size: 16px !important; }

@@ -11,6 +11,11 @@ export default function TradingViewTechnicals({ ticker }: Props) {
     if (!containerRef.current) return;
     containerRef.current.innerHTML = '';
 
+    // Required widget div must exist before the script runs
+    const widgetDiv = document.createElement('div');
+    widgetDiv.className = 'tradingview-widget-container__widget';
+    containerRef.current.appendChild(widgetDiv);
+
     const script = document.createElement('script');
     script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js';
     script.type = 'text/javascript';
@@ -44,10 +49,7 @@ export default function TradingViewTechnicals({ ticker }: Props) {
           📊 TradingView Technical Analysis
         </span>
       </div>
-      <div className="tradingview-widget-container" ref={containerRef}>
-        <div className="tradingview-widget-container__widget" />
-      </div>
+      <div className="tradingview-widget-container" ref={containerRef} />
     </div>
   );
 }
-
