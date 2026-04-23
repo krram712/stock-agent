@@ -3,12 +3,12 @@
 // Node.js + Express — deploy alongside docker-compose or Railway
 // ============================================================
 
-const express   = require('express');
-const cors      = require('cors');
-const Anthropic = require('@anthropic-ai/sdk');
-const app       = express();
+const express = require('express');
+const cors    = require('cors');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+const app     = express();
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const genai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 app.use(cors());
 app.use(express.json());
@@ -84,32 +84,27 @@ app.get('/stream', (req, res) => {
   signals.slice(0, 5).forEach(s => res.write(`data: ${JSON.stringify(s)}\n\n`));
 });
 
-// ── POST /ai-search — Claude AI with web search ──────────────
+// ── POST /ai-search — Gemini AI with Google Search grounding ─
 app.post('/ai-search', async (req, res) => {
   const { ticker, prompt } = req.body;
   if (!prompt) return res.status(400).json({ error: 'prompt is required' });
 
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return res.status(503).json({ error: 'ANTHROPIC_API_KEY not configured' });
+  if (!process.env.GEMINI_API_KEY) {
+    return res.status(503).json({ error: 'GEMINI_API_KEY not configured' });
   }
 
   try {
-    const systemPrompt = ticker
-      ? `You are AXIOM, an expert stock analyst AI. The user is analyzing ${ticker}. Answer their question with up-to-date, precise financial information. Be concise but insightful. Format with clear sections using markdown.`
-      : `You are AXIOM, an expert stock analyst AI. Answer with precise financial information. Be concise but insightful. Format with clear sections using markdown.`;
-
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 1024,
-      tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-      system: systemPrompt,
-      messages: [{ role: 'user', content: ticker ? `${ticker}: ${prompt}` : prompt }],
+    const model = genai.getGenerativeModel({
+      model: 'gemini-2.0-flash',
+      tools: [{ googleSearch: {} }],
+      systemInstruction: ticker
+        ? `You are AXIOM, an expert stock analyst AI. The user is analyzing ${ticker}. Search the web for latest information and answer precisely. Be concise but insightful. Use clear sections.`
+        : `You are AXIOM, an expert stock analyst AI. Search the web for latest information and answer precisely. Be concise but insightful.`,
     });
 
-    const text = response.content
-      .filter(b => b.type === 'text')
-      .map(b => b.text)
-      .join('\n');
+    const userQuery = ticker ? `${ticker} stock: ${prompt}` : prompt;
+    const result = await model.generateContent(userQuery);
+    const text = result.response.text();
 
     res.json({ result: text, ticker, prompt });
   } catch (err) {
