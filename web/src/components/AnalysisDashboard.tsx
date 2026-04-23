@@ -61,6 +61,9 @@ export default function AnalysisDashboard() {
   const [ticker, setTicker] = useState('');
   const [horizon, setHorizon] = useState('weekly');
   const [customPrompt, setCustomPrompt] = useState('');
+  const [aiResult, setAiResult] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
   const [chartInterval, setChartInterval] = useState<'D' | '60' | '15' | 'W'>('D');
   const [activeTab, setActiveTab] = useState<'analysis' | 'signals' | 'history' | 'watchlist'>('analysis');
   const [chartTicker, setChartTicker] = useState('AAPL');
@@ -75,7 +78,25 @@ export default function AnalysisDashboard() {
     const t = ticker.trim().toUpperCase();
     setChartTicker(t);
     clearAnalysisError();
-    await runAnalysis(t, horizon, customPrompt || undefined);
+    setAiResult(null);
+    setAiError(null);
+
+    const analysisPromise = runAnalysis(t, horizon, customPrompt || undefined);
+
+    if (customPrompt.trim()) {
+      setAiLoading(true);
+      fetch('/ai-search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticker: t, prompt: customPrompt }),
+      })
+        .then(r => r.json())
+        .then(d => { setAiResult(d.result || d.error); })
+        .catch(() => setAiError('AI search failed'))
+        .finally(() => setAiLoading(false));
+    }
+
+    await analysisPromise;
     setActiveTab('analysis');
   };
 
@@ -228,6 +249,23 @@ export default function AnalysisDashboard() {
             </div>
             <div className="axiom-two-col" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 340px', gap: 14, alignItems: 'start' }}>
               <div className="axiom-ai-sections">
+                {(aiLoading || aiResult || aiError) && (
+                  <div style={{ background: 'rgba(0,212,255,0.05)', border: '1px solid rgba(0,212,255,0.2)', borderLeft: '3px solid #00d4ff', borderRadius: 10, marginBottom: 8, overflow: 'hidden' }}>
+                    <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 8, color: '#00d4ff', fontFamily: 'monospace', fontSize: 13, fontWeight: 700, borderBottom: '1px solid rgba(0,212,255,0.1)' }}>
+                      🤖 AI Web Research
+                      {aiLoading && <span style={{ fontSize: 10, color: '#3d5a6e', fontWeight: 400 }}>searching the web...</span>}
+                    </div>
+                    <div style={{ padding: '10px 16px 14px' }}>
+                      {aiLoading && (
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          {[0,1,2].map(i => <span key={i} style={{ width: 6, height: 6, borderRadius: '50%', background: '#00d4ff', opacity: 0.6, animation: `pulse 1.2s ${i*0.4}s infinite` }} />)}
+                        </div>
+                      )}
+                      {aiError && <div style={{ color: '#ef4444', fontSize: 12 }}>⚠️ {aiError}</div>}
+                      {aiResult && <pre style={{ color: '#8ba0b0', fontSize: 12, lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0, fontFamily: 'monospace' }}>{aiResult}</pre>}
+                    </div>
+                  </div>
+                )}
                 {Object.entries(SECTION_META).map(([key]) => <SectionCard key={key} sectionKey={key} data={(a as any)[key]} />)}
               </div>
               <div className="axiom-tv-widgets">

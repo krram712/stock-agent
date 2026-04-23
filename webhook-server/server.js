@@ -3,9 +3,12 @@
 // Node.js + Express — deploy alongside docker-compose or Railway
 // ============================================================
 
-const express = require('express');
-const cors    = require('cors');
-const app     = express();
+const express   = require('express');
+const cors      = require('cors');
+const Anthropic = require('@anthropic-ai/sdk');
+const app       = express();
+
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 app.use(cors());
 app.use(express.json());
@@ -79,6 +82,40 @@ app.get('/stream', (req, res) => {
 
   // Send last 5 signals on connect
   signals.slice(0, 5).forEach(s => res.write(`data: ${JSON.stringify(s)}\n\n`));
+});
+
+// ── POST /ai-search — Claude AI with web search ──────────────
+app.post('/ai-search', async (req, res) => {
+  const { ticker, prompt } = req.body;
+  if (!prompt) return res.status(400).json({ error: 'prompt is required' });
+
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return res.status(503).json({ error: 'ANTHROPIC_API_KEY not configured' });
+  }
+
+  try {
+    const systemPrompt = ticker
+      ? `You are AXIOM, an expert stock analyst AI. The user is analyzing ${ticker}. Answer their question with up-to-date, precise financial information. Be concise but insightful. Format with clear sections using markdown.`
+      : `You are AXIOM, an expert stock analyst AI. Answer with precise financial information. Be concise but insightful. Format with clear sections using markdown.`;
+
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1024,
+      tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+      system: systemPrompt,
+      messages: [{ role: 'user', content: ticker ? `${ticker}: ${prompt}` : prompt }],
+    });
+
+    const text = response.content
+      .filter(b => b.type === 'text')
+      .map(b => b.text)
+      .join('\n');
+
+    res.json({ result: text, ticker, prompt });
+  } catch (err) {
+    console.error('[AI-SEARCH]', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ── GET /health ──────────────────────────────────────────────
