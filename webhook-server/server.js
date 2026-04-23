@@ -6,9 +6,11 @@
 const express = require('express');
 const cors    = require('cors');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const Groq    = require('groq-sdk');
 const app     = express();
 
 const genai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+const groq  = new Groq({ apiKey: process.env.GROQ_API_KEY || '' });
 
 app.use(cors());
 app.use(express.json());
@@ -84,33 +86,50 @@ app.get('/stream', (req, res) => {
   signals.slice(0, 5).forEach(s => res.write(`data: ${JSON.stringify(s)}\n\n`));
 });
 
-// ── POST /ai-search — Gemini AI with Google Search grounding ─
+// ── POST /ai-search — Gemini (web search) → Groq fallback ────
 app.post('/ai-search', async (req, res) => {
   const { ticker, prompt } = req.body;
   if (!prompt) return res.status(400).json({ error: 'prompt is required' });
 
-  if (!process.env.GEMINI_API_KEY) {
-    return res.status(503).json({ error: 'GEMINI_API_KEY not configured' });
+  const systemMsg = ticker
+    ? `You are AXIOM, an expert stock analyst AI. The user is analyzing ${ticker}. Provide up-to-date, precise financial information. Be concise but insightful. Use clear sections.`
+    : `You are AXIOM, an expert stock analyst AI. Provide precise financial information. Be concise but insightful.`;
+  const userQuery = ticker ? `${ticker} stock: ${prompt}` : prompt;
+
+  // Try Gemini first (has Google Search grounding)
+  if (process.env.GEMINI_API_KEY) {
+    try {
+      const model = genai.getGenerativeModel({
+        model: 'gemini-2.0-flash',
+        tools: [{ googleSearch: {} }],
+        systemInstruction: systemMsg,
+      });
+      const result = await model.generateContent(userQuery);
+      return res.json({ result: result.response.text(), provider: 'gemini', ticker, prompt });
+    } catch (err) {
+      console.warn('[AI-SEARCH] Gemini failed, falling back to Groq:', err.message);
+    }
   }
 
-  try {
-    const model = genai.getGenerativeModel({
-      model: 'gemini-2.0-flash',
-      tools: [{ googleSearch: {} }],
-      systemInstruction: ticker
-        ? `You are AXIOM, an expert stock analyst AI. The user is analyzing ${ticker}. Search the web for latest information and answer precisely. Be concise but insightful. Use clear sections.`
-        : `You are AXIOM, an expert stock analyst AI. Search the web for latest information and answer precisely. Be concise but insightful.`,
-    });
-
-    const userQuery = ticker ? `${ticker} stock: ${prompt}` : prompt;
-    const result = await model.generateContent(userQuery);
-    const text = result.response.text();
-
-    res.json({ result: text, ticker, prompt });
-  } catch (err) {
-    console.error('[AI-SEARCH]', err.message);
-    res.status(500).json({ error: err.message });
+  // Fallback to Groq (Llama 3.3 70B)
+  if (process.env.GROQ_API_KEY) {
+    try {
+      const chat = await groq.chat.completions.create({
+        model: 'llama-3.3-70b-versatile',
+        messages: [
+          { role: 'system', content: systemMsg },
+          { role: 'user',   content: userQuery },
+        ],
+        max_tokens: 1024,
+      });
+      return res.json({ result: chat.choices[0].message.content, provider: 'groq', ticker, prompt });
+    } catch (err) {
+      console.error('[AI-SEARCH] Groq failed:', err.message);
+      return res.status(500).json({ error: err.message });
+    }
   }
+
+  res.status(503).json({ error: 'No AI provider configured. Set GEMINI_API_KEY or GROQ_API_KEY.' });
 });
 
 // ── GET /health ──────────────────────────────────────────────

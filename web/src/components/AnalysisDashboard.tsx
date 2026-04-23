@@ -62,6 +62,7 @@ export default function AnalysisDashboard() {
   const [horizon, setHorizon] = useState('weekly');
   const [customPrompt, setCustomPrompt] = useState('');
   const [aiResult, setAiResult] = useState<string | null>(null);
+  const [aiProvider, setAiProvider] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [chartInterval, setChartInterval] = useState<'D' | '60' | '15' | 'W'>('D');
@@ -80,6 +81,7 @@ export default function AnalysisDashboard() {
     clearAnalysisError();
     setAiResult(null);
     setAiError(null);
+    setAiProvider(null);
 
     const analysisPromise = runAnalysis(t, horizon, customPrompt || undefined);
 
@@ -91,7 +93,7 @@ export default function AnalysisDashboard() {
         body: JSON.stringify({ ticker: t, prompt: customPrompt }),
       })
         .then(r => r.json())
-        .then(d => { setAiResult(d.result || d.error); })
+        .then(d => { setAiResult(d.result || d.error); setAiProvider(d.provider || null); })
         .catch(() => setAiError('AI search failed'))
         .finally(() => setAiLoading(false));
     }
@@ -254,6 +256,7 @@ export default function AnalysisDashboard() {
                     <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 8, color: '#00d4ff', fontFamily: 'monospace', fontSize: 13, fontWeight: 700, borderBottom: '1px solid rgba(0,212,255,0.1)' }}>
                       🤖 AI Web Research
                       {aiLoading && <span style={{ fontSize: 10, color: '#3d5a6e', fontWeight: 400 }}>searching the web...</span>}
+                      {aiProvider && <span style={{ fontSize: 9, color: '#3d5a6e', fontWeight: 400, marginLeft: 'auto' }}>via {aiProvider === 'gemini' ? '✦ Gemini' : '⚡ Groq'}</span>}
                     </div>
                     <div style={{ padding: '10px 16px 14px' }}>
                       {aiLoading && (
