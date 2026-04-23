@@ -109,8 +109,8 @@ app.post('/ai-search', async (req, res) => {
       });
       const td = await tr.json();
       if (td.results?.length) {
-        const snippets = td.results.map(r => `[${r.title}]\n${r.content}`).join('\n\n');
-        liveContext = `LIVE WEB SEARCH RESULTS (${new Date().toUTCString()}):\n\n${snippets}`;
+        const snippets = td.results.map(r => `[${r.title}]\n${r.content.slice(0, 300)}`).join('\n\n');
+        liveContext = `LIVE WEB SEARCH RESULTS (${new Date().toUTCString()}):\n\n${snippets.slice(0, 2000)}`;
         searchProvider = 'tavily';
         console.log(`[AI-SEARCH] Tavily returned ${td.results.length} results`);
       }
@@ -130,10 +130,10 @@ Be concise, insightful, and use clear sections. Today's date: ${new Date().toDat
 
   const messages = [{ role: 'system', content: systemMsg }, { role: 'user', content: userMsg }];
 
-  // Step 3: Groq AI summarizes
+  // Step 3: Groq AI summarizes live results
   if (process.env.GROQ_API_KEY) {
     try {
-      const chat = await groq.chat.completions.create({ model: 'llama-3.3-70b-versatile', messages, max_tokens: 1024 });
+      const chat = await groq.chat.completions.create({ model: 'llama-3.3-70b-versatile', messages, max_tokens: 800 });
       return res.json({
         result: chat.choices[0].message.content,
         provider: searchProvider ? `tavily+groq` : 'groq',
