@@ -256,7 +256,7 @@ export default function AnalysisDashboard() {
                     <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 8, color: '#00d4ff', fontFamily: 'monospace', fontSize: 13, fontWeight: 700, borderBottom: '1px solid rgba(0,212,255,0.1)' }}>
                       🤖 AI Web Research
                       {aiLoading && <span style={{ fontSize: 10, color: '#3d5a6e', fontWeight: 400 }}>searching the web...</span>}
-                      {aiProvider && <span style={{ fontSize: 9, color: '#3d5a6e', fontWeight: 400, marginLeft: 'auto' }}>via {aiProvider === 'groq-search' ? '⚡ Groq + Web Search' : '⚡ Groq'}</span>}
+                      {aiProvider && <span style={{ fontSize: 9, color: '#3d5a6e', fontWeight: 400, marginLeft: 'auto' }}>via {aiProvider === 'groq-search' ? '⚡ Groq + Web Search' : aiProvider === 'openrouter' ? '🔀 OpenRouter' : '⚡ Groq'}</span>}
                     </div>
                     <div style={{ padding: '10px 16px 14px' }}>
                       {aiLoading && (

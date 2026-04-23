@@ -84,43 +84,54 @@ app.get('/stream', (req, res) => {
   signals.slice(0, 5).forEach(s => res.write(`data: ${JSON.stringify(s)}\n\n`));
 });
 
-// ── POST /ai-search — Groq compound-beta (live web search) ───
+// ── POST /ai-search — Groq (web search) → OpenRouter fallback ─
 app.post('/ai-search', async (req, res) => {
   const { ticker, prompt } = req.body;
   if (!prompt) return res.status(400).json({ error: 'prompt is required' });
 
-  if (!process.env.GROQ_API_KEY)
-    return res.status(503).json({ error: 'GROQ_API_KEY not configured' });
-
   const systemMsg = ticker
     ? `You are AXIOM, an expert stock analyst AI. The user is analyzing ${ticker}. Search the web for latest information and answer precisely. Be concise but insightful. Use clear sections.`
     : `You are AXIOM, an expert stock analyst AI. Search the web for latest information and answer precisely. Be concise but insightful.`;
-
   const userQuery = ticker ? `${ticker} stock: ${prompt}` : prompt;
+  const messages  = [{ role: 'system', content: systemMsg }, { role: 'user', content: userQuery }];
 
-  // Try compound-beta (web search) first, fallback to llama-3.3-70b
-  for (const model of ['compound-beta', 'llama-3.3-70b-versatile']) {
-    try {
-      const chat = await groq.chat.completions.create({
-        model,
-        messages: [
-          { role: 'system', content: systemMsg },
-          { role: 'user',   content: userQuery },
-        ],
-        max_tokens: 1024,
-      });
-      const hasSearch = model === 'compound-beta';
-      return res.json({
-        result: chat.choices[0].message.content,
-        provider: hasSearch ? 'groq-search' : 'groq',
-        ticker, prompt,
-      });
-    } catch (err) {
-      console.warn(`[AI-SEARCH] ${model} failed:`, err.message);
+  // 1. Groq compound-beta (live web search)
+  if (process.env.GROQ_API_KEY) {
+    for (const model of ['compound-beta', 'llama-3.3-70b-versatile']) {
+      try {
+        const chat = await groq.chat.completions.create({ model, messages, max_tokens: 1024 });
+        return res.json({
+          result: chat.choices[0].message.content,
+          provider: model === 'compound-beta' ? 'groq-search' : 'groq',
+          ticker, prompt,
+        });
+      } catch (err) {
+        console.warn(`[AI-SEARCH] Groq ${model} failed:`, err.message);
+      }
     }
   }
 
-  res.status(500).json({ error: 'AI search failed' });
+  // 2. OpenRouter fallback (free models)
+  if (process.env.OPENROUTER_API_KEY) {
+    try {
+      const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://stockagentify.com',
+        },
+        body: JSON.stringify({ model: 'meta-llama/llama-3.3-70b-instruct:free', messages, max_tokens: 1024 }),
+      });
+      const data = await r.json();
+      const text = data.choices?.[0]?.message?.content;
+      if (text) return res.json({ result: text, provider: 'openrouter', ticker, prompt });
+    } catch (err) {
+      console.warn('[AI-SEARCH] OpenRouter failed:', err.message);
+    }
+  }
+
+  res.status(503).json({ error: 'All AI providers failed or not configured' });
 });
 
 // ── GET /health ──────────────────────────────────────────────
