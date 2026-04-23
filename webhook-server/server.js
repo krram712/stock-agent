@@ -3,6 +3,7 @@
 // Node.js + Express — deploy alongside docker-compose or Railway
 // ============================================================
 
+require('dotenv').config();
 const express = require('express');
 const cors    = require('cors');
 const Groq    = require('groq-sdk');
