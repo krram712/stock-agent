@@ -84,34 +84,67 @@ app.get('/stream', (req, res) => {
   signals.slice(0, 5).forEach(s => res.write(`data: ${JSON.stringify(s)}\n\n`));
 });
 
-// ── POST /ai-search — Groq (web search) → OpenRouter fallback ─
+// ── POST /ai-search — Tavily live search + Groq/OpenRouter AI ─
 app.post('/ai-search', async (req, res) => {
   const { ticker, prompt } = req.body;
   if (!prompt) return res.status(400).json({ error: 'prompt is required' });
 
-  const systemMsg = ticker
-    ? `You are AXIOM, an expert stock analyst AI. The user is analyzing ${ticker}. Search the web for latest information and answer precisely. Be concise but insightful. Use clear sections.`
-    : `You are AXIOM, an expert stock analyst AI. Search the web for latest information and answer precisely. Be concise but insightful.`;
-  const userQuery = ticker ? `${ticker} stock: ${prompt}` : prompt;
-  const messages  = [{ role: 'system', content: systemMsg }, { role: 'user', content: userQuery }];
+  const userQuery = ticker ? `${ticker} stock ${prompt}` : prompt;
+  let liveContext = '';
+  let searchProvider = '';
 
-  // 1. Groq compound-beta (live web search)
-  if (process.env.GROQ_API_KEY) {
-    for (const model of ['compound-beta', 'llama-3.3-70b-versatile']) {
-      try {
-        const chat = await groq.chat.completions.create({ model, messages, max_tokens: 1024 });
-        return res.json({
-          result: chat.choices[0].message.content,
-          provider: model === 'compound-beta' ? 'groq-search' : 'groq',
-          ticker, prompt,
-        });
-      } catch (err) {
-        console.warn(`[AI-SEARCH] Groq ${model} failed:`, err.message);
+  // Step 1: Tavily live web search
+  if (process.env.TAVILY_API_KEY) {
+    try {
+      const tr = await fetch('https://api.tavily.com/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          api_key: process.env.TAVILY_API_KEY,
+          query: userQuery,
+          search_depth: 'basic',
+          max_results: 5,
+          include_answer: true,
+        }),
+      });
+      const td = await tr.json();
+      if (td.results?.length) {
+        const snippets = td.results.map(r => `[${r.title}]\n${r.content}`).join('\n\n');
+        liveContext = `LIVE WEB SEARCH RESULTS (${new Date().toUTCString()}):\n\n${snippets}`;
+        searchProvider = 'tavily';
+        console.log(`[AI-SEARCH] Tavily returned ${td.results.length} results`);
       }
+    } catch (err) {
+      console.warn('[AI-SEARCH] Tavily failed:', err.message);
     }
   }
 
-  // 2. OpenRouter fallback (free models)
+  // Step 2: Build prompt with live context
+  const systemMsg = `You are AXIOM, an expert stock analyst AI.${ticker ? ` The user is analyzing ${ticker}.` : ''}
+${liveContext ? 'Use ONLY the live search results below to answer — do NOT use your training knowledge for facts/prices/news.' : 'Answer based on your knowledge.'}
+Be concise, insightful, and use clear sections. Today's date: ${new Date().toDateString()}.`;
+
+  const userMsg = liveContext
+    ? `${userQuery}\n\n${liveContext}`
+    : userQuery;
+
+  const messages = [{ role: 'system', content: systemMsg }, { role: 'user', content: userMsg }];
+
+  // Step 3: Groq AI summarizes
+  if (process.env.GROQ_API_KEY) {
+    try {
+      const chat = await groq.chat.completions.create({ model: 'llama-3.3-70b-versatile', messages, max_tokens: 1024 });
+      return res.json({
+        result: chat.choices[0].message.content,
+        provider: searchProvider ? `tavily+groq` : 'groq',
+        ticker, prompt,
+      });
+    } catch (err) {
+      console.warn('[AI-SEARCH] Groq failed:', err.message);
+    }
+  }
+
+  // Step 4: OpenRouter fallback
   if (process.env.OPENROUTER_API_KEY) {
     try {
       const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -125,7 +158,7 @@ app.post('/ai-search', async (req, res) => {
       });
       const data = await r.json();
       const text = data.choices?.[0]?.message?.content;
-      if (text) return res.json({ result: text, provider: 'openrouter', ticker, prompt });
+      if (text) return res.json({ result: text, provider: searchProvider ? 'tavily+openrouter' : 'openrouter', ticker, prompt });
     } catch (err) {
       console.warn('[AI-SEARCH] OpenRouter failed:', err.message);
     }
