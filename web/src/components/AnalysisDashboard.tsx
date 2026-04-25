@@ -60,8 +60,8 @@ export default function AnalysisDashboard() {
   const navigate = useNavigate();
   const [ticker, setTicker] = useState('');
   const [horizon, setHorizon] = useState('weekly');
-  type ResearchState = { loading: boolean; result: string | null; provider: string | null; error: string | null };
-  const EMPTY_RESEARCH = (): ResearchState => ({ loading: false, result: null, provider: null, error: null });
+  type ResearchState = { loading: boolean; result: string | null; provider: string | null; error: string | null; fetchedAt: string | null };
+  const EMPTY_RESEARCH = (): ResearchState => ({ loading: false, result: null, provider: null, error: null, fetchedAt: null });
   const RESEARCH_SECTIONS = [
     { key: 'news',      label: '📰 Latest News',     prompt: 'latest news and headlines today',                            color: '#00d4ff' },
     { key: 'analyst',   label: '⭐ Analyst Ratings',  prompt: 'analyst price target buy sell rating recommendations 2026',  color: '#fbbf24' },
@@ -97,8 +97,8 @@ export default function AnalysisDashboard() {
         body: JSON.stringify({ ticker: t, prompt: section.prompt }),
       })
         .then(r => r.json())
-        .then(d => setWebResearch(prev => ({ ...prev, [section.key]: { loading: false, result: d.result || d.error || null, provider: d.provider || null, error: null } })))
-        .catch(() => setWebResearch(prev => ({ ...prev, [section.key]: { loading: false, result: null, provider: null, error: 'Failed to load' } })));
+        .then(d => setWebResearch(prev => ({ ...prev, [section.key]: { loading: false, result: d.result || d.error || null, provider: d.provider || null, error: null, fetchedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) } })))
+        .catch(() => setWebResearch(prev => ({ ...prev, [section.key]: { loading: false, result: null, provider: null, error: 'Failed to load', fetchedAt: null } })));
     });
 
     await runAnalysis(t, horizon, undefined);
@@ -257,8 +257,8 @@ export default function AnalysisDashboard() {
                       <div style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 8, color: section.color, fontSize: 12, fontWeight: 700, borderBottom: `1px solid ${section.color}15` }}>
                         {section.label}
                         {rs.loading && <span style={{ fontSize: 10, color: '#3d5a6e', fontWeight: 400 }}>searching...</span>}
-                        {rs.provider && !rs.loading && <span style={{ fontSize: 9, color: '#2a4050', marginLeft: 'auto' }}>
-                          {rs.provider.includes('tavily') ? '🌐 live' : '⚡ ai'}
+                        {!rs.loading && rs.fetchedAt && <span style={{ fontSize: 9, color: '#2a4050', marginLeft: 'auto' }}>
+                          {rs.provider?.includes('tavily') ? '🌐 live' : '⚡ ai'} · {rs.fetchedAt}
                         </span>}
                       </div>
                       <div style={{ padding: '10px 16px 12px' }}>
