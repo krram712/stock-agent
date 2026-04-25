@@ -86,7 +86,7 @@ export default function AnalysisDashboard() {
 
     // Reset all research sections to loading
     const initial: Record<string, ResearchState> = {};
-    RESEARCH_SECTIONS.forEach(s => { initial[s.key] = { loading: true, result: null, provider: null, error: null }; });
+    RESEARCH_SECTIONS.forEach(s => { initial[s.key] = { loading: true, result: null, provider: null, error: null, fetchedAt: null }; });
     setWebResearch(initial);
 
     // Fire all 4 research fetches in parallel
