@@ -62,6 +62,7 @@ public class AnalysisService {
         String scorecard        = buildScorecard(score);
         String risks            = buildRisks(req.getTicker(), req.getHorizon());
         String tradePlan        = buildTradePlan(req.getTicker(), signals, score, req.getHorizon());
+        String signalStrength   = buildSignalStrength(req.getTicker(), req.getHorizon(), quote, technicals, fundamentals, score);
 
         StockAnalysis analysis = StockAnalysis.builder()
             .ticker(req.getTicker()).horizon(req.getHorizon()).userId(userId)
@@ -82,6 +83,7 @@ public class AnalysisService {
             .bullBearScorecard(scorecard)
             .riskFactors(risks)
             .tradePlan(tradePlan)
+            .signalStrength(signalStrength)
             .customAnalysis(req.getCustomPrompt())
             .createdAt(Instant.now())
             .expiresAt(Instant.now().plus(Duration.ofMinutes(cacheTtlMinutes)))
@@ -396,6 +398,75 @@ public class AnalysisService {
             s.get("entryLow"), s.get("entryHigh"),
             isBullish ? ">" : "<",
             profitTarget, maxLoss);
+    }
+
+    private String buildSignalStrength(String ticker, String horizon,
+            Map<String, Object> quote, Map<String, Object> t, Map<String, Object> f, ScoringResult score) {
+
+        double rsi      = toDouble(t.getOrDefault("rsi14", 50.0));
+        double macdHist = toDouble(t.getOrDefault("macdHistogram", 0.0));
+        double cmf      = toDouble(t.getOrDefault("cmf", 0.0));
+        double adx      = toDouble(t.getOrDefault("adx14", 0.0));
+        boolean golden  = Boolean.TRUE.equals(t.get("goldenCross"));
+        boolean squeeze = Boolean.TRUE.equals(t.get("bollingerSqueeze"));
+        String trend    = String.valueOf(t.getOrDefault("overallTrend", ""));
+
+        double revGrowth = toDouble(f.getOrDefault("revenueGrowthYoy", 0.0));
+        double margin    = toDouble(f.getOrDefault("netMargin", 0.0));
+        double buyPct    = toDouble(f.getOrDefault("buyPercentage", 50.0));
+        double peg       = toDouble(f.getOrDefault("pegRatio", 99.0));
+
+        record Factor(String label, boolean pass, String detail) {}
+        java.util.List<Factor> factors = java.util.List.of(
+            new Factor("Price in uptrend (BULLISH trend)",     trend.contains("BULL"),                        "overallTrend=" + trend),
+            new Factor("RSI in bullish zone (50–65)",          rsi >= 50 && rsi <= 65,                        String.format("RSI=%.1f", rsi)),
+            new Factor("MACD histogram positive (momentum up)",macdHist > 0,                                  String.format("MACD hist=%.3f", macdHist)),
+            new Factor("Volume / CMF positive (institutions)",  cmf > 0,                                      String.format("CMF=%.2f", cmf)),
+            new Factor("ADX > 25 (strong trend, not choppy)",  adx > 25,                                      String.format("ADX=%.1f", adx)),
+            new Factor("Golden cross (50 EMA > 200 EMA)",      golden,                                        golden ? "yes" : "no"),
+            new Factor("Bollinger squeeze detected (breakout)", squeeze,                                       squeeze ? "coiling" : "not squeezed"),
+            new Factor("Revenue growth > 15%% YoY",            revGrowth > 15,                               String.format("%.1f%%", revGrowth)),
+            new Factor("Net margin positive",                   margin > 0,                                    String.format("%.1f%%", margin)),
+            new Factor("Analyst buy consensus > 60%%",         buyPct > 60,                                   String.format("%.0f%%", buyPct)),
+            new Factor("PEG ratio < 1.5 (not overvalued)",    peg > 0 && peg < 1.5,                           String.format("%.2f", peg)),
+            new Factor("Overall score > 65 (high conviction)", score.getOverallScore() > 65,                  score.getOverallScore() + "/100")
+        );
+
+        long aligned = factors.stream().filter(Factor::pass).count();
+        String level = aligned >= 10 ? "VERY HIGH" : aligned >= 7 ? "HIGH" : aligned >= 4 ? "MODERATE" : "LOW";
+        String bar   = "█".repeat((int) aligned) + "░".repeat(12 - (int) aligned);
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(String.format("SIGNAL STRENGTH — %s | %s%n%n", ticker, horizon.toUpperCase()));
+        sb.append(String.format("  Factors Aligned: %d / 12%n", aligned));
+        sb.append(String.format("  Confidence:      %s%n", level));
+        sb.append(String.format("  [%s]%n%n", bar));
+
+        sb.append("  TECHNICAL FACTORS:%n".formatted());
+        for (int i = 0; i < 7; i++) {
+            Factor fc = factors.get(i);
+            sb.append(String.format("    %s %-42s %s%n", fc.pass() ? "✅" : "❌", fc.label(), fc.detail()));
+        }
+        sb.append("%n  FUNDAMENTAL FACTORS:%n".formatted());
+        for (int i = 7; i < 12; i++) {
+            Factor fc = factors.get(i);
+            sb.append(String.format("    %s %-42s %s%n", fc.pass() ? "✅" : "❌", fc.label(), fc.detail()));
+        }
+
+        sb.append("""
+
+          INTERPRETATION:
+            10–12 aligned → Very high probability setup — all engines firing
+             7–9  aligned → High probability — strong confluence, consider entry
+             4–6  aligned → Moderate — wait for more confirmation
+             0–3  aligned → Low — avoid or reduce exposure
+        """);
+        return sb.toString();
+    }
+
+    private double toDouble(Object val) {
+        if (val == null) return 0.0;
+        try { return Double.parseDouble(val.toString()); } catch (Exception e) { return 0.0; }
     }
 
     private String verdictDescription(com.axiom.analysis.model.StockAnalysis.Verdict v) {

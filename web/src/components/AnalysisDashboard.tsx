@@ -16,6 +16,7 @@ const HORIZONS = [
 ];
 
 const SECTION_META: Record<string, { title: string; color: string }> = {
+  signalStrength:    { title: '🎯 Signal Strength',       color: '#00ff88' },
   executiveSummary:  { title: '⚡ Executive Summary',     color: '#00ff88' },
   marketPulse:       { title: '📡 Market Pulse',          color: '#00d4ff' },
   technicalAnalysis: { title: '📐 Technical Analysis',    color: '#fbbf24' },
@@ -24,7 +25,7 @@ const SECTION_META: Record<string, { title: string; color: string }> = {
   entryExitSignals:  { title: '🚦 Entry / Exit Signals',  color: '#ff6b6b' },
   bullBearScorecard: { title: '🐂🐻 Bull/Bear Scorecard', color: '#ff9f43' },
   riskFactors:       { title: '⚠️ Risk Factors',          color: '#ef4444' },
-  tradePlan:         { title: '📋 Trade Plan',            color: '#00ff88' },
+  tradePlan:         { title: '📋 Options Strategy',      color: '#a78bfa' },
 };
 
 const VERDICT_COLORS: Record<string, string> = {

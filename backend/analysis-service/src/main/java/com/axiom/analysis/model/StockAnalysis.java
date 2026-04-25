@@ -44,6 +44,8 @@ public class StockAnalysis {
     private String riskFactors;
     @Column(columnDefinition = "TEXT")
     private String tradePlan;
+    @Column(columnDefinition = "TEXT")
+    private String signalStrength;
 
     private Integer overallScore;
 
