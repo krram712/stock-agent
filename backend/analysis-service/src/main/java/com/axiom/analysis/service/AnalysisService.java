@@ -317,27 +317,100 @@ public class AnalysisService {
     }
 
     private String buildTradePlan(String ticker, Map<String, Object> s, ScoringResult score, String horizon) {
+        boolean isBullish = score.getOverallScore() >= 58;
+        boolean isBearish = score.getOverallScore() <= 42;
+        String action     = isBullish ? "CONSIDER LONG" : isBearish ? "AVOID / SHORT BIAS" : "WAIT FOR SETUP";
+        String optionType = isBullish ? "CALL" : isBearish ? "PUT" : "N/A";
+
+        String dte = switch (horizon.toLowerCase()) {
+            case "day"       -> "2–5 DTE  (same-day or next-day expiry)";
+            case "weekly"    -> "7–14 DTE (current or next weekly expiry)";
+            case "monthly"   -> "21–45 DTE (nearest monthly expiry)";
+            case "quarterly" -> "45–90 DTE (next quarterly expiry)";
+            case "longterm"  -> "90–180 DTE (LEAPS — 2 expirations out)";
+            default          -> "14–30 DTE";
+        };
+        String profitTarget = switch (horizon.toLowerCase()) {
+            case "day"       -> "50–80%";
+            case "weekly"    -> "75–120%";
+            case "monthly"   -> "100–150%";
+            case "quarterly" -> "150–200%";
+            case "longterm"  -> "200–300%";
+            default          -> "75–100%";
+        };
+        String maxLoss = switch (horizon.toLowerCase()) {
+            case "day"       -> "25%";
+            case "weekly"    -> "35%";
+            default          -> "40–50%";
+        };
+        String strikeGuide = isBullish
+            ? String.format("ATM or 1-strike OTM CALL (strike near $%s)", s.get("entryHigh"))
+            : isBearish
+            ? String.format("ATM or 1-strike OTM PUT  (strike near $%s)", s.get("entryLow"))
+            : "No clear directional edge — wait";
+
+        if (!isBullish && !isBearish) {
+            return String.format("""
+                TRADE PLAN — %s | %s | Score: %d
+
+                ACTION: WAIT FOR SETUP
+
+                Score is in NEUTRAL zone (43–57). No high-conviction options play.
+                Wait for score > 58 (bullish) or < 42 (bearish) before entering.
+
+                Stock Plan (if holding):
+                  Entry  $%s – $%s  |  Stop $%s
+                  T1: $%s → take 30%%   T2: $%s → take 40%%   T3: $%s
+                  R/R: 1:%s  |  Max Risk: 1–2%% of portfolio
+                """,
+                ticker, horizon.toUpperCase(), score.getOverallScore(),
+                s.get("entryLow"), s.get("entryHigh"), s.get("stopLoss"),
+                s.get("target1"), s.get("target2"), s.get("target3"), s.get("riskReward"));
+        }
+
         return String.format("""
             TRADE PLAN — %s | %s | Score: %d
-            
+
             ACTION: %s
-            
-            EXECUTION:
-              1. Wait for price to reach entry zone $%s–$%s
-              2. Enter with 1/3 position on initial touch
-              3. Add remaining on confirmation candle
-              4. Place stop at $%s immediately after entry
-            
-            MANAGEMENT:
-              • Take 30%% profit at T1 ($%s)
-              • Move stop to breakeven at T1
-              • Take 40%% profit at T2 ($%s)
-              • Let remaining 30%% run to T3 ($%s)
-            
-            R/R: 1:%s  |  Max Risk: 1-2%% of portfolio
+
+            ══════════════════════════════════
+            OPTIONS STRATEGY
+            ══════════════════════════════════
+            Direction:   BUY %s
+            Strike:      %s
+            Expiry:      %s
+
+            ENTRY — 3 Steps:
+              1. Wait for price to enter zone $%s – $%s
+              2. Buy 1 contract when candle CLOSES inside the zone
+              3. Confirm: volume spike + RSI %s 50
+
+            EXIT RULES:
+              TAKE PROFIT : +%s on premium  → exit all or scale out
+              STOP LOSS   : -%s on premium  → hard exit, no exceptions
+              TIME STOP   : No move in 2 trading days → exit to avoid theta decay
+
+            POSITION SIZE:
+              • Risk max 1–2%% of portfolio per trade
+              • 1 contract = 100 shares exposure
+              • Never hold through earnings without a hedge
+
+            ══════════════════════════════════
+            STOCK PLAN (no options account)
+            ══════════════════════════════════
+              Entry  $%s – $%s  |  Stop $%s
+              T1: $%s → take 30%%  (move stop to breakeven)
+              T2: $%s → take 40%%
+              T3: $%s → final 30%%
+              R/R: 1:%s
+
+            NOT FINANCIAL ADVICE. Options can expire worthless.
             """,
-            ticker, horizon.toUpperCase(), score.getOverallScore(),
-            score.getOverallScore() >= 58 ? "CONSIDER LONG" : score.getOverallScore() <= 42 ? "AVOID / SHORT BIAS" : "WAIT FOR SETUP",
+            ticker, horizon.toUpperCase(), score.getOverallScore(), action,
+            optionType, strikeGuide, dte,
+            s.get("entryLow"), s.get("entryHigh"),
+            isBullish ? ">" : "<",
+            profitTarget, maxLoss,
             s.get("entryLow"), s.get("entryHigh"), s.get("stopLoss"),
             s.get("target1"), s.get("target2"), s.get("target3"), s.get("riskReward"));
     }
