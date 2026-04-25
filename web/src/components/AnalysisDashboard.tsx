@@ -60,11 +60,15 @@ export default function AnalysisDashboard() {
   const navigate = useNavigate();
   const [ticker, setTicker] = useState('');
   const [horizon, setHorizon] = useState('weekly');
-  const [customPrompt, setCustomPrompt] = useState('');
-  const [aiResult, setAiResult] = useState<string | null>(null);
-  const [aiProvider, setAiProvider] = useState<string | null>(null);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiError, setAiError] = useState<string | null>(null);
+  type ResearchState = { loading: boolean; result: string | null; provider: string | null; error: string | null };
+  const EMPTY_RESEARCH = (): ResearchState => ({ loading: false, result: null, provider: null, error: null });
+  const RESEARCH_SECTIONS = [
+    { key: 'news',      label: '📰 Latest News',     prompt: 'latest news and headlines today',                            color: '#00d4ff' },
+    { key: 'analyst',   label: '⭐ Analyst Ratings',  prompt: 'analyst price target buy sell rating recommendations 2026',  color: '#fbbf24' },
+    { key: 'earnings',  label: '📢 Earnings',          prompt: 'upcoming earnings results revenue EPS forecast',             color: '#00ff88' },
+    { key: 'sentiment', label: '🐦 Sentiment',         prompt: 'market sentiment retail institutional investor opinion',     color: '#a78bfa' },
+  ] as const;
+  const [webResearch, setWebResearch] = useState<Record<string, ResearchState>>({});
   const [chartInterval, setChartInterval] = useState<'D' | '60' | '15' | 'W'>('D');
   const [activeTab, setActiveTab] = useState<'analysis' | 'signals' | 'history' | 'watchlist'>('analysis');
   const [chartTicker, setChartTicker] = useState('AAPL');
@@ -79,26 +83,25 @@ export default function AnalysisDashboard() {
     const t = ticker.trim().toUpperCase();
     setChartTicker(t);
     clearAnalysisError();
-    setAiResult(null);
-    setAiError(null);
-    setAiProvider(null);
 
-    const analysisPromise = runAnalysis(t, horizon, customPrompt || undefined);
+    // Reset all research sections to loading
+    const initial: Record<string, ResearchState> = {};
+    RESEARCH_SECTIONS.forEach(s => { initial[s.key] = { loading: true, result: null, provider: null, error: null }; });
+    setWebResearch(initial);
 
-    if (customPrompt.trim()) {
-      setAiLoading(true);
+    // Fire all 4 research fetches in parallel
+    RESEARCH_SECTIONS.forEach(section => {
       fetch('/ai-search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticker: t, prompt: customPrompt }),
+        body: JSON.stringify({ ticker: t, prompt: section.prompt }),
       })
         .then(r => r.json())
-        .then(d => { setAiResult(d.result || d.error); setAiProvider(d.provider || null); })
-        .catch(() => setAiError('AI search failed'))
-        .finally(() => setAiLoading(false));
-    }
+        .then(d => setWebResearch(prev => ({ ...prev, [section.key]: { loading: false, result: d.result || d.error || null, provider: d.provider || null, error: null } })))
+        .catch(() => setWebResearch(prev => ({ ...prev, [section.key]: { loading: false, result: null, provider: null, error: 'Failed to load' } })));
+    });
 
-    await analysisPromise;
+    await runAnalysis(t, horizon, undefined);
     setActiveTab('analysis');
   };
 
@@ -171,12 +174,7 @@ export default function AnalysisDashboard() {
               </div>
             </div>
           </div>
-          <div style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: 8, letterSpacing: 2, color: '#2a4050', marginBottom: 6 }}>CUSTOM PROMPT (OPTIONAL)</div>
-            <input value={customPrompt} onChange={e => setCustomPrompt(e.target.value)} placeholder="e.g. Compare with MSFT, check earnings date..."
-              style={{ width: '100%', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 8, padding: '10px 14px', color: '#c8d6e0', fontSize: 13, fontFamily: 'inherit', outline: 'none' }} />
-          </div>
-          {analysisError && <div style={{ color: '#ef4444', fontSize: 12, marginBottom: 10 }}>⚠️ {analysisError}</div>}
+{analysisError && <div style={{ color: '#ef4444', fontSize: 12, marginBottom: 10 }}>⚠️ {analysisError}</div>}
           <button onClick={handleAnalyze} disabled={isAnalyzing || !ticker.trim()}
             style={{ width: '100%', padding: 13, background: isAnalyzing || !ticker.trim() ? 'rgba(0,255,136,0.03)' : 'linear-gradient(135deg,rgba(0,255,136,0.16),rgba(0,212,255,0.12))', border: `1px solid ${isAnalyzing || !ticker.trim() ? 'rgba(0,255,136,0.1)' : 'rgba(0,255,136,0.35)'}`, borderRadius: 9, color: isAnalyzing || !ticker.trim() ? '#1e3040' : '#00ff88', fontSize: 11, letterSpacing: 3, fontWeight: 700, fontFamily: 'inherit', cursor: isAnalyzing || !ticker.trim() ? 'not-allowed' : 'pointer' }}>
             {isAnalyzing ? '⟳ ANALYZING...' : '⚡ RUN FULL ANALYSIS'}
@@ -251,26 +249,26 @@ export default function AnalysisDashboard() {
             </div>
             <div className="axiom-two-col" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 340px', gap: 14, alignItems: 'start' }}>
               <div className="axiom-ai-sections">
-                {(aiLoading || aiResult || aiError) && (
-                  <div style={{ background: 'rgba(0,212,255,0.05)', border: '1px solid rgba(0,212,255,0.2)', borderLeft: '3px solid #00d4ff', borderRadius: 10, marginBottom: 8, overflow: 'hidden' }}>
-                    <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 8, color: '#00d4ff', fontFamily: 'monospace', fontSize: 13, fontWeight: 700, borderBottom: '1px solid rgba(0,212,255,0.1)' }}>
-                      🤖 AI Web Research
-                      {aiLoading && <span style={{ fontSize: 10, color: '#3d5a6e', fontWeight: 400 }}>searching the web...</span>}
-                      {aiProvider && <span style={{ fontSize: 9, color: '#3d5a6e', fontWeight: 400, marginLeft: 'auto' }}>
-  via {aiProvider === 'tavily+groq' ? '🌐 Live Search + Groq' : aiProvider === 'tavily+openrouter' ? '🌐 Live Search + OpenRouter' : aiProvider === 'openrouter' ? '🔀 OpenRouter' : '⚡ Groq'}
-</span>}
+                {Object.keys(webResearch).length > 0 && RESEARCH_SECTIONS.map(section => {
+                  const rs = webResearch[section.key];
+                  if (!rs) return null;
+                  return (
+                    <div key={section.key} style={{ background: `rgba(255,255,255,0.018)`, border: `1px solid ${section.color}20`, borderLeft: `3px solid ${section.color}`, borderRadius: 10, marginBottom: 8, overflow: 'hidden' }}>
+                      <div style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 8, color: section.color, fontSize: 12, fontWeight: 700, borderBottom: `1px solid ${section.color}15` }}>
+                        {section.label}
+                        {rs.loading && <span style={{ fontSize: 10, color: '#3d5a6e', fontWeight: 400 }}>searching...</span>}
+                        {rs.provider && !rs.loading && <span style={{ fontSize: 9, color: '#2a4050', marginLeft: 'auto' }}>
+                          {rs.provider.includes('tavily') ? '🌐 live' : '⚡ ai'}
+                        </span>}
+                      </div>
+                      <div style={{ padding: '10px 16px 12px' }}>
+                        {rs.loading && <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>{[0,1,2].map(i => <span key={i} style={{ width: 5, height: 5, borderRadius: '50%', background: section.color, opacity: 0.5 }} />)}</div>}
+                        {rs.error && <div style={{ color: '#ef4444', fontSize: 11 }}>⚠️ {rs.error}</div>}
+                        {rs.result && <pre style={{ color: '#8ba0b0', fontSize: 12, lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0, fontFamily: 'monospace' }}>{rs.result}</pre>}
+                      </div>
                     </div>
-                    <div style={{ padding: '10px 16px 14px' }}>
-                      {aiLoading && (
-                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                          {[0,1,2].map(i => <span key={i} style={{ width: 6, height: 6, borderRadius: '50%', background: '#00d4ff', opacity: 0.6, animation: `pulse 1.2s ${i*0.4}s infinite` }} />)}
-                        </div>
-                      )}
-                      {aiError && <div style={{ color: '#ef4444', fontSize: 12 }}>⚠️ {aiError}</div>}
-                      {aiResult && <pre style={{ color: '#8ba0b0', fontSize: 12, lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0, fontFamily: 'monospace' }}>{aiResult}</pre>}
-                    </div>
-                  </div>
-                )}
+                  );
+                })}
                 {Object.entries(SECTION_META).map(([key]) => <SectionCard key={key} sectionKey={key} data={(a as any)[key]} />)}
               </div>
               <div className="axiom-tv-widgets">
