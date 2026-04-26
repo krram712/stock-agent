@@ -213,13 +213,13 @@ export default function AnalysisDashboard() {
 
         {/* Tab Bar */}
         <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-          {([
+          {[
             { id: 'analysis',  label: '⚡ Analysis' },
             { id: 'signals',   label: `📡 Live Signals${tvSignals.length > 0 ? ` (${tvSignals.length})` : ''}` },
             { id: 'history',   label: `📋 History${analysisHistory.length > 0 ? ` (${analysisHistory.length})` : ''}` },
             { id: 'watchlist', label: `👁 Watchlist${watchlists.length > 0 ? ` (${watchlists.length})` : ''}` },
             { id: 'options',   label: '⚙️ Options Engine' },
-            ...(user?.role === 'ADMIN' ? [{ id: 'admin' as const, label: '👑 Users' }] : []),
+            ...(user?.role === 'ADMIN' ? [{ id: 'admin', label: '👑 Users' }] : []),
           ].map(tab => (
             <button key={tab.id} onClick={() => { setActiveTab(tab.id as any); if (tab.id === 'admin') loadAdminUsers(); }}
               style={{ padding: '8px 14px', background: 'transparent', border: 'none', borderBottom: activeTab === tab.id ? '2px solid #00ff88' : '2px solid transparent', color: activeTab === tab.id ? '#00ff88' : '#6b8a9a', fontSize: 11, fontFamily: 'inherit', fontWeight: 700, cursor: 'pointer', letterSpacing: 1, marginBottom: -1 }}>
