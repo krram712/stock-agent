@@ -6,6 +6,7 @@ import TradingViewChart from './TradingViewChart';
 import TradingViewTechnicals from './TradingViewTechnicals';
 import TradingViewMiniChart from './TradingViewMiniChart';
 import { useTradingViewSignals } from '../hooks/useTradingViewSignals';
+import OptionsEngine from './OptionsEngine';
 
 const HORIZONS = [
   { id: 'day', label: 'Day Trade' },
@@ -71,7 +72,7 @@ export default function AnalysisDashboard() {
   ] as const;
   const [webResearch, setWebResearch] = useState<Record<string, ResearchState>>({});
   const [chartInterval, setChartInterval] = useState<'D' | '60' | '15' | 'W'>('D');
-  const [activeTab, setActiveTab] = useState<'analysis' | 'signals' | 'history' | 'watchlist'>('analysis');
+  const [activeTab, setActiveTab] = useState<'analysis' | 'signals' | 'history' | 'watchlist' | 'options'>('analysis');
   const [chartTicker, setChartTicker] = useState('AAPL');
 
   const { signals: tvSignals, latestSignal, isConnected: tvConnected } = useTradingViewSignals(chartTicker);
@@ -199,6 +200,7 @@ export default function AnalysisDashboard() {
             { id: 'signals',   label: `📡 Live Signals${tvSignals.length > 0 ? ` (${tvSignals.length})` : ''}` },
             { id: 'history',   label: `📋 History${analysisHistory.length > 0 ? ` (${analysisHistory.length})` : ''}` },
             { id: 'watchlist', label: `👁 Watchlist${watchlists.length > 0 ? ` (${watchlists.length})` : ''}` },
+            { id: 'options',   label: '⚙️ Options Engine' },
           ] as const).map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
               style={{ padding: '8px 14px', background: 'transparent', border: 'none', borderBottom: activeTab === tab.id ? '2px solid #00ff88' : '2px solid transparent', color: activeTab === tab.id ? '#00ff88' : '#6b8a9a', fontSize: 11, fontFamily: 'inherit', fontWeight: 700, cursor: 'pointer', letterSpacing: 1, marginBottom: -1 }}>
@@ -386,6 +388,15 @@ export default function AnalysisDashboard() {
               </div>
             )}
           </div>
+        )}
+
+        {/* OPTIONS ENGINE TAB */}
+        {activeTab === 'options' && (
+          <OptionsEngine
+            ticker={chartTicker}
+            price={a?.entryHigh ? Number(a.entryHigh) : undefined}
+            overallScore={a?.overallScore}
+          />
         )}
 
         <div style={{ textAlign: 'center', marginTop: 32, fontSize: 9, color: '#0e1e26', letterSpacing: 1 }}>
