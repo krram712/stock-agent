@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store/useStore';
+import { api } from '../services/api';
 import TradingViewTickerTape from './TradingViewTickerTape';
 import TradingViewChart from './TradingViewChart';
 import TradingViewTechnicals from './TradingViewTechnicals';
@@ -72,7 +73,24 @@ export default function AnalysisDashboard() {
   ] as const;
   const [webResearch, setWebResearch] = useState<Record<string, ResearchState>>({});
   const [chartInterval, setChartInterval] = useState<'D' | '60' | '15' | 'W'>('D');
-  const [activeTab, setActiveTab] = useState<'analysis' | 'signals' | 'history' | 'watchlist' | 'options'>('analysis');
+  const [activeTab, setActiveTab] = useState<'analysis' | 'signals' | 'history' | 'watchlist' | 'options' | 'admin'>('analysis');
+  const [adminUsers, setAdminUsers] = useState<any[]>([]);
+  const [adminLoading, setAdminLoading] = useState(false);
+
+  const loadAdminUsers = useCallback(async () => {
+    setAdminLoading(true);
+    try { const r = await api.admin.listUsers(); setAdminUsers(r.data); } catch {}
+    setAdminLoading(false);
+  }, []);
+
+  const handleApprove = async (id: string) => {
+    await api.admin.approveUser(id);
+    loadAdminUsers();
+  };
+  const handleReject = async (id: string) => {
+    await api.admin.rejectUser(id);
+    loadAdminUsers();
+  };
   const [chartTicker, setChartTicker] = useState('AAPL');
 
   const { signals: tvSignals, latestSignal, isConnected: tvConnected } = useTradingViewSignals(chartTicker);
@@ -201,8 +219,9 @@ export default function AnalysisDashboard() {
             { id: 'history',   label: `📋 History${analysisHistory.length > 0 ? ` (${analysisHistory.length})` : ''}` },
             { id: 'watchlist', label: `👁 Watchlist${watchlists.length > 0 ? ` (${watchlists.length})` : ''}` },
             { id: 'options',   label: '⚙️ Options Engine' },
-          ] as const).map(tab => (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+            ...(user?.role === 'ADMIN' ? [{ id: 'admin' as const, label: '👑 Users' }] : []),
+          ].map(tab => (
+            <button key={tab.id} onClick={() => { setActiveTab(tab.id as any); if (tab.id === 'admin') loadAdminUsers(); }}
               style={{ padding: '8px 14px', background: 'transparent', border: 'none', borderBottom: activeTab === tab.id ? '2px solid #00ff88' : '2px solid transparent', color: activeTab === tab.id ? '#00ff88' : '#6b8a9a', fontSize: 11, fontFamily: 'inherit', fontWeight: 700, cursor: 'pointer', letterSpacing: 1, marginBottom: -1 }}>
               {tab.label}
             </button>
@@ -387,6 +406,48 @@ export default function AnalysisDashboard() {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* ADMIN TAB */}
+        {activeTab === 'admin' && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <div style={{ fontSize: 11, color: '#a78bfa', fontWeight: 700, letterSpacing: 2 }}>👑 USER MANAGEMENT</div>
+              <button onClick={loadAdminUsers} style={{ padding: '6px 14px', background: 'transparent', border: '1px solid rgba(167,139,250,0.3)', borderRadius: 6, color: '#a78bfa', fontSize: 10, fontFamily: 'inherit', cursor: 'pointer' }}>
+                {adminLoading ? '⟳ Loading...' : '↻ Refresh'}
+              </button>
+            </div>
+            {adminUsers.length === 0 && !adminLoading && (
+              <div style={{ textAlign: 'center', padding: '30px', color: '#1a2a35', fontSize: 12 }}>No users found</div>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {adminUsers.map((u: any) => {
+                const statusColor = u.status === 'APPROVED' ? '#00ff88' : u.status === 'REJECTED' ? '#ef4444' : '#fbbf24';
+                return (
+                  <div key={u.id} style={{ background: 'rgba(255,255,255,0.018)', border: '1px solid rgba(255,255,255,0.06)', borderLeft: `3px solid ${statusColor}`, borderRadius: 8, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                    <div style={{ flex: 1, minWidth: 180 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#c8d6e0' }}>{u.firstName} {u.lastName}</div>
+                      <div style={{ fontSize: 10, color: '#3d5a6e' }}>{u.email}</div>
+                      <div style={{ fontSize: 9, color: '#2a4050', marginTop: 2 }}>{u.role} · joined {new Date(u.createdAt).toLocaleDateString()}</div>
+                    </div>
+                    <div style={{ padding: '3px 10px', borderRadius: 99, background: `${statusColor}18`, border: `1px solid ${statusColor}40`, fontSize: 9, color: statusColor, fontWeight: 700 }}>
+                      {u.status}
+                    </div>
+                    {u.status !== 'APPROVED' && (
+                      <button onClick={() => handleApprove(u.id)} style={{ padding: '5px 12px', background: 'rgba(0,255,136,0.1)', border: '1px solid rgba(0,255,136,0.4)', borderRadius: 6, color: '#00ff88', fontSize: 10, fontFamily: 'inherit', cursor: 'pointer', fontWeight: 700 }}>
+                        ✓ Approve
+                      </button>
+                    )}
+                    {u.status !== 'REJECTED' && u.role !== 'ADMIN' && (
+                      <button onClick={() => handleReject(u.id)} style={{ padding: '5px 12px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 6, color: '#ef4444', fontSize: 10, fontFamily: 'inherit', cursor: 'pointer', fontWeight: 700 }}>
+                        ✗ Reject
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 

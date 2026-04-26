@@ -35,6 +35,7 @@ public class DataInitializer implements ApplicationRunner {
                 .role(email.startsWith("raghu") ? User.Role.ADMIN : User.Role.USER)
                 .tier(email.startsWith("raghu") ? User.SubscriptionTier.ENTERPRISE : User.SubscriptionTier.FREE)
                 .emailVerified(true)
+                .status(User.AccountStatus.APPROVED)
                 .build();
             userRepository.save(admin);
             log.info("✅ Seeded user: {} / username: {} ({})", email, username, admin.getRole());

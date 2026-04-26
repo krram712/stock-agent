@@ -48,17 +48,23 @@ public class AuthService {
             .passwordHash(passwordEncoder.encode(req.getPassword()))
             .firstName(req.getFirstName())
             .lastName(req.getLastName())
+            .status(User.AccountStatus.PENDING)
             .build();
         userRepository.save(user);
         return buildAuthResponse(user);
     }
 
     public AuthResponse login(LoginRequest req) {
-        // Support login by email OR username
         User user = userRepository.findByEmailOrUsername(req.getEmail(), req.getEmail())
             .orElseThrow(() -> new IllegalArgumentException("Invalid credentials"));
         if (!passwordEncoder.matches(req.getPassword(), user.getPasswordHash())) {
             throw new IllegalArgumentException("Invalid credentials");
+        }
+        if (user.getStatus() == User.AccountStatus.PENDING) {
+            throw new IllegalArgumentException("ACCESS_PENDING: Your account is awaiting admin approval.");
+        }
+        if (user.getStatus() == User.AccountStatus.REJECTED) {
+            throw new IllegalArgumentException("ACCESS_DENIED: Your access request has been rejected.");
         }
         return buildAuthResponse(user);
     }
@@ -99,6 +105,7 @@ public class AuthService {
         dto.setLastName(user.getLastName());
         dto.setRole(user.getRole().name());
         dto.setTier(user.getTier().name());
+        dto.setStatus(user.getStatus().name());
 
         AuthResponse response = new AuthResponse();
         response.setAccessToken(accessToken);

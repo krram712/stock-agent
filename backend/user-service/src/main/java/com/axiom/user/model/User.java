@@ -37,6 +37,10 @@ public class User {
 
     @Enumerated(EnumType.STRING)
     @Builder.Default
+    private AccountStatus status = AccountStatus.PENDING;
+
+    @Enumerated(EnumType.STRING)
+    @Builder.Default
     private SubscriptionTier tier = SubscriptionTier.FREE;
 
     @Builder.Default
@@ -53,5 +57,6 @@ public class User {
 
     public enum Role { USER, PREMIUM, ADMIN }
     public enum SubscriptionTier { FREE, PRO, ENTERPRISE }
+    public enum AccountStatus { PENDING, APPROVED, REJECTED }
 }
 

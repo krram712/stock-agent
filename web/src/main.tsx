@@ -4,11 +4,14 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import LandingPage from './components/LandingPage'
 import LoginPage from './components/LoginPage'
 import AnalysisDashboard from './components/AnalysisDashboard'
+import PendingApprovalPage from './components/PendingApprovalPage'
 import { useStore } from './store/useStore'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user } = useStore()
   if (!user) return <Navigate to="/login" replace />
+  if (user.status === 'PENDING') return <PendingApprovalPage />
+  if (user.status === 'REJECTED') return <Navigate to="/login" replace />
   return <>{children}</>
 }
 

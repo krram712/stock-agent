@@ -62,5 +62,10 @@ export const api = {
     create: (d: any)      => apiClient.post('/api/v1/alerts', d),
     delete: (id: string)  => apiClient.delete(`/api/v1/alerts/${id}`),
   },
+  admin: {
+    listUsers:   ()           => apiClient.get('/api/v1/admin/users'),
+    approveUser: (id: string) => apiClient.put(`/api/v1/admin/users/${id}/approve`),
+    rejectUser:  (id: string) => apiClient.put(`/api/v1/admin/users/${id}/reject`),
+  },
 };
 
