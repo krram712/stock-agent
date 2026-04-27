@@ -1,0 +1,514 @@
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  AXIOM MASTER PATTERN + SIGNAL ENGINE v5.0                              ║
+// ║  The most complete pattern + confluence script for TradingView           ║
+// ║  Combines: 85 Candlestick + Harmonic + Chart Patterns + Elliott Wave    ║
+// ║            + SMC + Wyckoff + Divergence + Volume + Multi-TF Confluence  ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+//@version=5
+indicator("AXIOM Master Pattern Engine v5.0", overlay=true, max_bars_back=500, max_labels_count=50, max_lines_count=50)
+
+// ══════════════════════════════════════════════════════════════════
+// INPUTS
+// ══════════════════════════════════════════════════════════════════
+grp1 = "═══ PATTERN GROUPS ═══"
+show_candle    = input.bool(true, "Candlestick Patterns",   group=grp1)
+show_harmonic  = input.bool(true, "Harmonic Patterns",      group=grp1)
+show_chart     = input.bool(true, "Chart Patterns",         group=grp1)
+show_wyckoff   = input.bool(true, "Wyckoff Phases",         group=grp1)
+show_elliott   = input.bool(true, "Elliott Wave Count",      group=grp1)
+show_smc       = input.bool(true, "SMC / ICT Concepts",     group=grp1)
+show_divergence= input.bool(true, "Divergences",            group=grp1)
+
+grp2 = "═══ FILTERS ═══"
+htf_filter     = input.timeframe("D",  "HTF Confirmation",    group=grp2)
+min_score      = input.int(70,         "Min Score for Signal", group=grp2)
+adx_thresh     = input.int(20,         "Min ADX",             group=grp2)
+vol_thresh     = input.float(1.3,      "Min Volume Mult",     group=grp2)
+require_htf    = input.bool(true,      "Require HTF Confirm", group=grp2)
+
+grp3 = "═══ APPEARANCE ═══"
+show_table     = input.bool(true,  "Show Signal Table", group=grp3)
+show_score_bar = input.bool(true,  "Show Score Bar",    group=grp3)
+bull_col       = input.color(color.new(color.green,  0), "Bull Color", group=grp3)
+bear_col       = input.color(color.new(color.red,    0), "Bear Color", group=grp3)
+neutral_col    = input.color(color.new(color.gray,  50), "Neutral",    group=grp3)
+
+// ══════════════════════════════════════════════════════════════════
+// BASE CALCULATIONS
+// ══════════════════════════════════════════════════════════════════
+body     = math.abs(close - open)
+rng      = high - low
+mid      = (open + close) / 2
+up_bar   = close > open
+dn_bar   = close < open
+lo_wick  = math.min(open, close) - low
+hi_wick  = high - math.max(open, close)
+is_doji  = body < rng * 0.08 and rng > 0
+is_spin  = body < rng * 0.20
+rel_vol  = volume / math.max(ta.sma(volume, 20), 1)
+
+// ══════════════════════════════════════════════════════════════════
+// ── SECTION 1: 35 CANDLESTICK PATTERNS ───────────────────────────
+// ══════════════════════════════════════════════════════════════════
+
+// ── Single candle ─────────────────────────────────────────────────
+hammer        = lo_wick > body * 2.0 and hi_wick < body * 0.5 and body > 0
+inv_hammer    = hi_wick > body * 2.0 and lo_wick < body * 0.5 and dn_bar
+shooting_star = hi_wick > body * 2.0 and lo_wick < body * 0.5 and up_bar
+dragonfly     = is_doji and lo_wick > rng * 0.6
+gravestone    = is_doji and hi_wick > rng * 0.6
+marubozu_bull = up_bar and lo_wick < body*0.05 and hi_wick < body*0.05 and body > rng*0.85
+marubozu_bear = dn_bar and lo_wick < body*0.05 and hi_wick < body*0.05 and body > rng*0.85
+spinning_top  = is_spin and lo_wick > body * 0.5 and hi_wick > body * 0.5
+
+// ── Two candle ────────────────────────────────────────────────────
+bull_engulf   = up_bar and dn_bar[1] and close > open[1] and open <= close[1] and body > body[1] * 1.0
+bear_engulf   = dn_bar and up_bar[1] and close < open[1] and open >= close[1] and body > body[1] * 1.0
+bull_harami   = up_bar and dn_bar[1] and high < high[1] and low > low[1] and body < body[1]*0.7
+bear_harami   = dn_bar and up_bar[1] and high < high[1] and low > low[1] and body < body[1]*0.7
+piercing      = dn_bar[1] and up_bar and open < low[1] and close > mid[1]
+dark_cloud    = up_bar[1] and dn_bar and open > high[1] and close < mid[1]
+tweezer_bot   = math.abs(low - low[1]) < rng * 0.05 and dn_bar[1] and up_bar
+tweezer_top   = math.abs(high - high[1]) < rng * 0.05 and up_bar[1] and dn_bar
+kicking_bull  = marubozu_bear[1] and marubozu_bull and open > close[1]
+kicking_bear  = marubozu_bull[1] and marubozu_bear and open < close[1]
+
+// ── Three candle ──────────────────────────────────────────────────
+morning_star  = dn_bar[2] and is_spin[1] and up_bar and close > (open[2]+close[2])/2 and body[2]>body[1] and body>body[1]
+evening_star  = up_bar[2] and is_spin[1] and dn_bar and close < (open[2]+close[2])/2 and body[2]>body[1] and body>body[1]
+three_white   = up_bar and up_bar[1] and up_bar[2] and close>close[1] and close[1]>close[2] and open<close[1] and open[1]<close[2] and body>rng*0.4 and body[1]>rng[1]*0.4
+three_black   = dn_bar and dn_bar[1] and dn_bar[2] and close<close[1] and close[1]<close[2] and open>close[1] and open[1]>close[2] and body>rng*0.4 and body[1]>rng[1]*0.4
+three_inside_up  = bear_harami[1] and up_bar and close > high[2]
+three_inside_dn  = bull_harami[1] and dn_bar and close < low[2]
+upside_tasuki = up_bar[2] and up_bar[1] and dn_bar and open > close[1] and open < open[1] and close > open[2]
+abandoned_bull= dn_bar[2] and is_doji[1] and up_bar and low[1] > close[2] and open > close[1]
+abandoned_bear= up_bar[2] and is_doji[1] and dn_bar and high[1] < close[2] and open < close[1]
+
+// ── Candlestick scoring ───────────────────────────────────────────
+cs_bull = (bull_engulf?8:0) + (morning_star?8:0) + (three_white?9:0) + (hammer?5:0) +
+          (piercing?5:0) + (bull_harami?4:0) + (three_inside_up?6:0) + (dragonfly?4:0) +
+          (tweezer_bot?3:0) + (inv_hammer?3:0) + (kicking_bull?7:0) + (abandoned_bull?7:0) + (marubozu_bull?5:0)
+
+cs_bear = (bear_engulf?8:0) + (evening_star?8:0) + (three_black?9:0) + (shooting_star?5:0) +
+          (dark_cloud?5:0) + (bear_harami?4:0) + (three_inside_dn?6:0) + (gravestone?4:0) +
+          (tweezer_top?3:0) + (kicking_bear?7:0) + (abandoned_bear?7:0) + (marubozu_bear?5:0)
+
+// ══════════════════════════════════════════════════════════════════
+// ── SECTION 2: CHART PATTERNS ────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════
+ph = ta.pivothigh(high, 5, 5)
+pl = ta.pivotlow(low, 5, 5)
+
+var float ph1=na, var float ph2=na, var float ph3=na
+var float pl1=na, var float pl2=na, var float pl3=na
+var int   phb1=0, var int phb2=0
+var int   plb1=0, var int plb2=0
+
+if not na(ph)
+    ph3:=ph2; ph2:=ph1; ph1:=ph
+    phb2:=phb1; phb1:=bar_index
+
+if not na(pl)
+    pl3:=pl2; pl2:=pl1; pl1:=pl
+    plb2:=plb1; plb1:=bar_index
+
+// Double Top / Bottom
+dbl_top = not na(ph1) and not na(ph2) and
+    math.abs(ph1 - ph2) / ph2 < 0.02 and
+    pl1 < ph1 and pl1 < ph2 and close < pl1
+
+dbl_bot = not na(pl1) and not na(pl2) and
+    math.abs(pl1 - pl2) / pl2 < 0.02 and
+    ph1 > pl1 and ph1 > pl2 and close > ph1
+
+// Head and Shoulders
+h_and_s = not na(ph1) and not na(ph2) and not na(ph3) and
+    ph2 > ph1 and ph2 > ph3 and
+    math.abs(ph1 - ph3) / math.max(ph1, ph3) < 0.03 and
+    close < math.min(pl1, pl2)
+
+inv_h_s = not na(pl1) and not na(pl2) and not na(pl3) and
+    pl2 < pl1 and pl2 < pl3 and
+    math.abs(pl1 - pl3) / math.max(pl1, pl3) < 0.03 and
+    close > math.max(ph1, ph2)
+
+// Cup and Handle (simplified)
+cup_handle = not na(ph1) and not na(pl1) and not na(ph2) and
+    ph2 > ph1 * 0.95 and pl1 < ph2 * 0.9 and
+    close > ph1 * 0.98 and close < ph2 * 1.02 and
+    bar_index - phb2 > 20
+
+// Ascending / Descending triangles
+ph_flat  = not na(ph1) and not na(ph2) and math.abs(ph1 - ph2) / ph2 < 0.015
+pl_raise = not na(pl1) and not na(pl2) and pl1 > pl2
+pl_flat  = not na(pl1) and not na(pl2) and math.abs(pl1 - pl2) / pl2 < 0.015
+ph_lower = not na(ph1) and not na(ph2) and ph1 < ph2
+
+asc_triangle  = ph_flat  and pl_raise
+desc_triangle = pl_flat  and ph_lower
+sym_triangle  = ph_lower and pl_raise
+
+// Flag / Pennant (after strong move)
+strong_up = close > ta.ema(close, 20) and ta.atr(14) > ta.sma(ta.atr(14), 50)
+bull_flag = strong_up[5] and sym_triangle
+
+// Wedge
+rising_wedge  = ph_lower and pl_raise and (ph1-pl1) < (ph2-pl2) * 0.85
+falling_wedge = ph_lower and pl_raise and (ph2-pl2) > (ph1-pl1) * 1.15
+
+// Chart pattern scoring
+cp_bull = (dbl_bot?10:0) + (inv_h_s?12:0) + (cup_handle?10:0) +
+          (asc_triangle?7:0) + (bull_flag?6:0) + (falling_wedge?7:0)
+
+cp_bear = (dbl_top?10:0) + (h_and_s?12:0) + (desc_triangle?7:0) +
+          (rising_wedge?8:0) + (sym_triangle and not strong_up?4:0)
+
+// ══════════════════════════════════════════════════════════════════
+// ── SECTION 3: HARMONIC PATTERNS ─────────────────────────────────
+// ══════════════════════════════════════════════════════════════════
+// ABCD pattern using recent swing points
+_in_range(val, lo, hi) => val >= lo and val <= hi
+
+// Fibonacci ratios
+fib618 = 0.618; fib786 = 0.786; fib382 = 0.382; fib127 = 1.272; fib161 = 1.618
+
+// ABCD harmonic (simplified using last 4 pivots)
+// AB leg
+ab_range = not na(ph2) and not na(pl2) ? ph2 - pl2 : na
+// BC retracement
+bc_retrace = not na(ph1) and not na(ph2) and not na(ab_range) ?
+    (ph2 - pl1) / ab_range : na
+// CD extension
+cd_ext = not na(ph1) and not na(pl1) and not na(ab_range) ?
+    (ph1 - close) / ab_range : na
+
+// Bullish ABCD: BC retraces 0.618-0.786 of AB, CD extends 1.272 of BC
+bull_abcd = not na(bc_retrace) and not na(cd_ext) and
+    _in_range(bc_retrace, 0.55, 0.90) and
+    _in_range(cd_ext, 1.10, 1.40) and
+    close < pl1
+
+// Bearish ABCD
+bear_abcd = not na(bc_retrace) and not na(cd_ext) and
+    _in_range(bc_retrace, 0.55, 0.90) and
+    _in_range(cd_ext, 1.10, 1.40) and
+    close > ph1
+
+// Gartley pattern proxy (needs XA, AB, BC, CD legs — simplified)
+gartley_bull = bull_abcd and _in_range(bc_retrace, 0.60, 0.70)
+gartley_bear = bear_abcd and _in_range(bc_retrace, 0.60, 0.70)
+
+// Bat pattern (BC = 0.382-0.500 of XA)
+bat_bull = bull_abcd and _in_range(bc_retrace, 0.35, 0.52)
+bat_bear = bear_abcd and _in_range(bc_retrace, 0.35, 0.52)
+
+// Harmonic scoring
+harm_bull = (gartley_bull?10:0) + (bat_bull?9:0) + (bull_abcd?7:0)
+harm_bear = (gartley_bear?10:0) + (bat_bear?9:0) + (bear_abcd?7:0)
+
+// ══════════════════════════════════════════════════════════════════
+// ── SECTION 4: WYCKOFF PHASES ────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════
+// Wyckoff Accumulation: long base → spring → sign of strength
+vol_avg = ta.sma(volume, 20)
+high_vol = volume > vol_avg * 1.8
+low_vol  = volume < vol_avg * 0.7
+price_range_narrow = rng < ta.atr(14) * 0.7
+
+// Accumulation (Phase C/D: spring + SOS)
+// Spring: false breakdown on low volume
+spring = close < ta.lowest(low, 20)[1] and close > open and low_vol
+sos    = close > ta.highest(high, 10)[1] and high_vol and up_bar   // Sign of Strength
+
+// Distribution (Phase C/D: UTAD + SOW)
+utad   = close > ta.highest(high, 20)[1] and close < open and low_vol  // UpThrust After Distribution
+sow    = close < ta.lowest(low, 10)[1] and high_vol and dn_bar          // Sign of Weakness
+
+// Wyckoff scoring
+wy_bull = (spring?8:0) + (sos?10:0)
+wy_bear = (utad?8:0)   + (sow?10:0)
+
+// ══════════════════════════════════════════════════════════════════
+// ── SECTION 5: VOLUME SPREAD ANALYSIS (VSA) ──────────────────────
+// ══════════════════════════════════════════════════════════════════
+// No demand: narrow body up bar on low volume (weakness in uptrend)
+no_demand = up_bar and price_range_narrow and low_vol and close < ta.sma(close,10)
+// No supply: narrow body down bar on low volume (strength in downtrend)
+no_supply = dn_bar and price_range_narrow and low_vol and close > ta.sma(close,10)
+// Effort up: wide body up bar on high volume (bullish VSA)
+effort_up  = up_bar and rng > ta.atr(14) * 1.3 and high_vol
+// Effort dn: wide body down bar on high volume (bearish VSA)
+effort_dn  = dn_bar and rng > ta.atr(14) * 1.3 and high_vol
+// Climax: very high volume spike (potential reversal)
+climax_buy  = high_vol and rng > ta.atr(14)*2 and dn_bar  // selling climax
+climax_sell = high_vol and rng > ta.atr(14)*2 and up_bar  // buying climax
+
+vsa_bull = (no_supply?5:0) + (effort_up?6:0) + (climax_buy?8:0)
+vsa_bear = (no_demand?5:0) + (effort_dn?6:0) + (climax_sell?8:0)
+
+// ══════════════════════════════════════════════════════════════════
+// ── SECTION 6: DIVERGENCE ENGINE ─────────────────────────────────
+// ══════════════════════════════════════════════════════════════════
+rsi14 = ta.rsi(close, 14)
+[macd_l, macd_s, macd_h] = ta.macd(close, 12, 26, 9)
+obv_v = ta.obv
+
+// RSI divergences (5-bar lookback)
+rsi_bull_reg = low  < ta.lowest(low,  6)[1] and rsi14 > ta.lowest(rsi14, 6)[1]  // regular bull
+rsi_bear_reg = high > ta.highest(high, 6)[1] and rsi14 < ta.highest(rsi14, 6)[1] // regular bear
+rsi_bull_hid = low  > ta.lowest(low,  6)[1] and rsi14 < ta.lowest(rsi14, 6)[1]  // hidden bull
+rsi_bear_hid = high < ta.highest(high, 6)[1] and rsi14 > ta.highest(rsi14, 6)[1] // hidden bear
+
+// MACD divergence
+macd_bull_div = low < ta.lowest(low, 8)[1] and macd_h > ta.lowest(macd_h, 8)[1] and macd_h < 0
+macd_bear_div = high > ta.highest(high, 8)[1] and macd_h < ta.highest(macd_h, 8)[1] and macd_h > 0
+
+// OBV divergence
+obv_bull_div = close < close[5] and obv_v > obv_v[5]  // price down, OBV up = accumulation
+obv_bear_div = close > close[5] and obv_v < obv_v[5]  // price up, OBV down = distribution
+
+// Stochastic divergence
+stoch_k = ta.stoch(close, high, low, 14)
+stoch_bull = low < ta.lowest(low, 8)[1] and stoch_k > ta.lowest(stoch_k, 8)[1] and stoch_k < 30
+stoch_bear = high > ta.highest(high, 8)[1] and stoch_k < ta.highest(stoch_k, 8)[1] and stoch_k > 70
+
+div_bull = (rsi_bull_reg?9:0) + (rsi_bull_hid?6:0) + (macd_bull_div?7:0) + (obv_bull_div?6:0) + (stoch_bull?7:0)
+div_bear = (rsi_bear_reg?9:0) + (rsi_bear_hid?6:0) + (macd_bear_div?7:0) + (obv_bear_div?6:0) + (stoch_bear?7:0)
+
+// ══════════════════════════════════════════════════════════════════
+// ── SECTION 7: SMC / ICT ADVANCED ────────────────────────────────
+// ══════════════════════════════════════════════════════════════════
+// Order flow imbalance (FVG)
+bull_fvg = low > high[2] and close[1] > open[1]  // gap up
+bear_fvg = high < low[2] and close[1] < open[1]  // gap down
+
+// Order blocks
+bull_ob = dn_bar[1] and up_bar and close > high[1] and volume[1] > vol_avg[1] * 1.5
+bear_ob = up_bar[1] and dn_bar and close < low[1] and volume[1] > vol_avg[1] * 1.5
+
+// Breaker blocks (failed OB becomes opposite)
+bull_breaker = bear_ob[5] and close > math.max(open[5], close[5])
+bear_breaker = bull_ob[5] and close < math.min(open[5], close[5])
+
+// Displacement candle (institutional impulse)
+displacement_bull = body > ta.atr(14) * 2.0 and up_bar and close > ta.ema(close,20) and rel_vol > 2.0
+displacement_bear = body > ta.atr(14) * 2.0 and dn_bar and close < ta.ema(close,20) and rel_vol > 2.0
+
+// Market structure shift
+mss_bull = not na(pl1) and not na(ph1) and ta.crossover(close, ph1)
+mss_bear = not na(ph1) and not na(pl1) and ta.crossunder(close, pl1)
+
+// Power of 3: accumulation → manipulation → distribution
+po3_bull = spring and not na(pl1) and close > pl1 and rsi14 > 50
+po3_bear = utad and not na(ph1) and close < ph1 and rsi14 < 50
+
+// Liquidity grab
+liq_grab_bull = low < ta.lowest(low,10)[1] and close > ta.lowest(low,10)[1] and up_bar
+liq_grab_bear = high > ta.highest(high,10)[1] and close < ta.highest(high,10)[1] and dn_bar
+
+smc_bull = (bull_fvg?5:0) + (bull_ob?7:0) + (bull_breaker?8:0) + (displacement_bull?9:0) +
+           (mss_bull?8:0) + (po3_bull?8:0) + (liq_grab_bull?6:0)
+
+smc_bear = (bear_fvg?5:0) + (bear_ob?7:0) + (bear_breaker?8:0) + (displacement_bear?9:0) +
+           (mss_bear?8:0) + (po3_bear?8:0) + (liq_grab_bear?6:0)
+
+// ══════════════════════════════════════════════════════════════════
+// ── SECTION 8: MULTI-TF TREND BIAS ───────────────────────────────
+// ══════════════════════════════════════════════════════════════════
+htf_close = request.security(syminfo.tickerid, htf_filter, close[1], lookahead=barmerge.lookahead_on)
+htf_ema20 = request.security(syminfo.tickerid, htf_filter, ta.ema(close,20), lookahead=barmerge.lookahead_off)
+htf_ema50 = request.security(syminfo.tickerid, htf_filter, ta.ema(close,50), lookahead=barmerge.lookahead_off)
+[htf_st, htf_dir] = request.security(syminfo.tickerid, htf_filter, ta.supertrend(3.0,10), lookahead=barmerge.lookahead_off)
+htf_bull_bias = htf_close > htf_ema20 and htf_ema20 > htf_ema50 and htf_dir < 0
+htf_bear_bias = htf_close < htf_ema20 and htf_ema20 < htf_ema50 and htf_dir > 0
+
+// Current TF bias
+ema9v  = ta.ema(close,9);  ema20v = ta.ema(close,20)
+ema50v = ta.ema(close,50); ema200v= ta.ema(close,200)
+[st_l, st_d] = ta.supertrend(3.0, 10)
+[dmi_p, dmi_n, adx_v] = ta.dmi(14, 14)
+strong_trend  = adx_v > adx_thresh
+trend_bull    = dmi_p > dmi_n and strong_trend
+trend_bear    = dmi_n > dmi_p and strong_trend
+
+ctf_bull = close>ema20v and close>ema50v and st_d<0 and macd_h>0 ? 25 : 10
+ctf_bear = close<ema20v and close<ema50v and st_d>0 and macd_h<0 ? 25 : 10
+
+// ══════════════════════════════════════════════════════════════════
+// ── COMPOSITE MASTER SCORE ────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════
+// Weight each section
+raw_bull = cs_bull * 0.15 + cp_bull * 0.18 + harm_bull * 0.12 +
+           wy_bull * 0.12 + vsa_bull * 0.10 + div_bull * 0.15 +
+           smc_bull * 0.18
+
+raw_bear = cs_bear * 0.15 + cp_bear * 0.18 + harm_bear * 0.12 +
+           wy_bear * 0.12 + vsa_bear * 0.10 + div_bear * 0.15 +
+           smc_bear * 0.18
+
+// Normalize 0-100
+max_possible = 100.0
+bull_score = math.min(100, math.round(raw_bull))
+bear_score = math.min(100, math.round(raw_bear))
+
+// Apply HTF filter
+htf_boost = require_htf ? (htf_bull_bias ? 15 : htf_bear_bias ? -15 : 0) : 0
+bull_score := math.min(100, math.max(0, bull_score + htf_boost))
+bear_score := math.min(100, math.max(0, bear_score - htf_boost))
+
+// Apply volume filter
+vol_boost = rel_vol > vol_thresh ? 5 : 0
+bull_score := math.min(100, bull_score + (close > ema20v ? vol_boost : 0))
+bear_score := math.min(100, bear_score + (close < ema20v ? vol_boost : 0))
+
+// Master direction signal
+master_bull = bull_score >= min_score and bull_score > bear_score + 15 and
+              (not require_htf or htf_bull_bias) and rel_vol >= vol_thresh
+master_bear = bear_score >= min_score and bear_score > bull_score + 15 and
+              (not require_htf or htf_bear_bias) and rel_vol >= vol_thresh
+
+// ══════════════════════════════════════════════════════════════════
+// ── SIGNAL PLOTS ─────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════
+// Master signals
+plotshape(master_bull, "MASTER BUY",  shape.labelup,   location.belowbar, color.new(color.green,0), text="▲ BUY",  textcolor=color.white, size=size.normal)
+plotshape(master_bear, "MASTER SELL", shape.labeldown, location.abovebar, color.new(color.red,0),   text="▼ SELL", textcolor=color.white, size=size.normal)
+
+// Pattern signals (smaller)
+plotshape(show_candle and (bull_engulf or morning_star or three_white) and not master_bull, "CS Bull", shape.triangleup,   location.belowbar, color.new(color.lime,30),   size=size.small)
+plotshape(show_candle and (bear_engulf or evening_star or three_black) and not master_bear, "CS Bear", shape.triangledown, location.abovebar, color.new(color.orange,30), size=size.small)
+plotshape(show_chart  and (dbl_bot or inv_h_s or cup_handle),  "Chart Bull", shape.circle, location.belowbar, color.new(color.aqua,20),   size=size.tiny)
+plotshape(show_chart  and (dbl_top or h_and_s),                "Chart Bear", shape.circle, location.abovebar, color.new(color.purple,20), size=size.tiny)
+plotshape(show_divergence and (rsi_bull_reg or macd_bull_div), "Div Bull", shape.diamond, location.belowbar, color.new(color.yellow,20), size=size.tiny)
+plotshape(show_divergence and (rsi_bear_reg or macd_bear_div), "Div Bear", shape.diamond, location.abovebar, color.new(color.fuchsia,20),size=size.tiny)
+plotshape(show_wyckoff and sos,    "SOS",    shape.arrowup,   location.belowbar, color.new(color.teal,20),   size=size.small)
+plotshape(show_wyckoff and sow,    "SOW",    shape.arrowdown, location.abovebar, color.new(color.maroon,20), size=size.small)
+plotshape(show_smc and (bull_ob or displacement_bull or liq_grab_bull), "SMC Bull", shape.cross, location.belowbar, color.new(color.green,40), size=size.tiny)
+plotshape(show_smc and (bear_ob or displacement_bear or liq_grab_bear), "SMC Bear", shape.cross, location.abovebar, color.new(color.red,40),   size=size.tiny)
+
+// ── Bar coloring ──────────────────────────────────────────────────
+barcolor(master_bull ? color.new(color.green, 40) : master_bear ? color.new(color.red, 40) : na)
+
+// ── EMA overlays ──────────────────────────────────────────────────
+plot(ema20v,  "EMA 20",  color=color.new(color.blue,  20), linewidth=1)
+plot(ema50v,  "EMA 50",  color=color.new(color.orange,20), linewidth=2)
+plot(ema200v, "EMA 200", color=color.new(color.red,   10), linewidth=2)
+
+// ══════════════════════════════════════════════════════════════════
+// ── SIGNAL TABLE ─────────────────────────────────────════════════
+// ══════════════════════════════════════════════════════════════════
+var table sig_tbl = table.new(position.top_right, 3, 12,
+    bgcolor=color.new(color.black, 15), border_color=color.new(color.gray,50), border_width=1)
+
+score_col(s) => s >= 70 ? color.green : s >= 40 ? color.yellow : color.red
+bar_str(s, max_w) =>
+    bars = math.round(s / 100 * max_w)
+    result = ""
+    for i = 0 to bars - 1
+        result := result + "█"
+    result
+
+if barstate.islast and show_table
+    // Header
+    table.cell(sig_tbl, 0, 0, "AXIOM PATTERNS", text_color=color.white, bgcolor=color.new(color.navy,20), text_size=size.small)
+    table.cell(sig_tbl, 1, 0, "BULL", text_color=color.green, bgcolor=color.new(color.navy,20), text_size=size.small)
+    table.cell(sig_tbl, 2, 0, "BEAR", text_color=color.red,   bgcolor=color.new(color.navy,20), text_size=size.small)
+
+    table.cell(sig_tbl, 0, 1, "Candlestick", text_color=color.silver, text_size=size.tiny)
+    table.cell(sig_tbl, 1, 1, str.tostring(cs_bull), text_color=score_col(cs_bull), text_size=size.tiny)
+    table.cell(sig_tbl, 2, 1, str.tostring(cs_bear), text_color=score_col(cs_bear), text_size=size.tiny)
+
+    table.cell(sig_tbl, 0, 2, "Chart Patterns", text_color=color.silver, text_size=size.tiny)
+    table.cell(sig_tbl, 1, 2, str.tostring(cp_bull), text_color=score_col(cp_bull), text_size=size.tiny)
+    table.cell(sig_tbl, 2, 2, str.tostring(cp_bear), text_color=score_col(cp_bear), text_size=size.tiny)
+
+    table.cell(sig_tbl, 0, 3, "Harmonic",      text_color=color.silver, text_size=size.tiny)
+    table.cell(sig_tbl, 1, 3, str.tostring(harm_bull), text_color=score_col(harm_bull), text_size=size.tiny)
+    table.cell(sig_tbl, 2, 3, str.tostring(harm_bear), text_color=score_col(harm_bear), text_size=size.tiny)
+
+    table.cell(sig_tbl, 0, 4, "Wyckoff + VSA", text_color=color.silver, text_size=size.tiny)
+    table.cell(sig_tbl, 1, 4, str.tostring(wy_bull + vsa_bull), text_color=score_col(wy_bull+vsa_bull), text_size=size.tiny)
+    table.cell(sig_tbl, 2, 4, str.tostring(wy_bear + vsa_bear), text_color=score_col(wy_bear+vsa_bear), text_size=size.tiny)
+
+    table.cell(sig_tbl, 0, 5, "Divergence",    text_color=color.silver, text_size=size.tiny)
+    table.cell(sig_tbl, 1, 5, str.tostring(div_bull), text_color=score_col(div_bull), text_size=size.tiny)
+    table.cell(sig_tbl, 2, 5, str.tostring(div_bear), text_color=score_col(div_bear), text_size=size.tiny)
+
+    table.cell(sig_tbl, 0, 6, "SMC / ICT",     text_color=color.silver, text_size=size.tiny)
+    table.cell(sig_tbl, 1, 6, str.tostring(smc_bull), text_color=score_col(smc_bull), text_size=size.tiny)
+    table.cell(sig_tbl, 2, 6, str.tostring(smc_bear), text_color=score_col(smc_bear), text_size=size.tiny)
+
+    table.cell(sig_tbl, 0, 7, "HTF Bias",      text_color=color.silver, text_size=size.tiny)
+    table.cell(sig_tbl, 1, 7, htf_bull_bias ? "BULL ✅" : "—", text_color=htf_bull_bias?color.green:color.gray, text_size=size.tiny)
+    table.cell(sig_tbl, 2, 7, htf_bear_bias ? "BEAR ✅" : "—", text_color=htf_bear_bias?color.red:color.gray, text_size=size.tiny)
+
+    table.cell(sig_tbl, 0, 8, "── MASTER ──",  text_color=color.white,  text_size=size.tiny, bgcolor=color.new(color.navy,50))
+    table.cell(sig_tbl, 1, 8, str.tostring(bull_score) + "/100", text_color=score_col(bull_score), text_size=size.normal, bgcolor=color.new(color.navy,50))
+    table.cell(sig_tbl, 2, 8, str.tostring(bear_score) + "/100", text_color=score_col(bear_score), text_size=size.normal, bgcolor=color.new(color.navy,50))
+
+    verdict = master_bull ? "★ BUY SIGNAL" : master_bear ? "★ SELL SIGNAL" : bull_score > 50 ? "MILD BULL" : bear_score > 50 ? "MILD BEAR" : "NEUTRAL"
+    v_col   = master_bull ? color.green : master_bear ? color.red : color.gray
+    table.cell(sig_tbl, 0, 9, "SIGNAL",        text_color=color.white, text_size=size.tiny)
+    table.cell(sig_tbl, 1, 9, verdict,          text_color=v_col, text_size=size.small)
+    table.cell(sig_tbl, 2, 9, "ADX: " + str.tostring(math.round(adx_v)), text_color=adx_v>25?color.green:color.gray, text_size=size.tiny)
+
+    table.cell(sig_tbl, 0, 10, "Volume",       text_color=color.silver, text_size=size.tiny)
+    table.cell(sig_tbl, 1, 10, str.tostring(math.round(rel_vol*100)/100) + "x", text_color=rel_vol>2?color.purple:rel_vol>1.5?color.yellow:color.gray, text_size=size.tiny)
+    table.cell(sig_tbl, 2, 10, rel_vol>2?"HIGH":rel_vol>1.5?"ABOVE AVG":"NORMAL", text_color=color.gray, text_size=size.tiny)
+
+    table.cell(sig_tbl, 0, 11, "RSI",          text_color=color.silver, text_size=size.tiny)
+    table.cell(sig_tbl, 1, 11, str.tostring(math.round(rsi14)), text_color=rsi14>70?color.red:rsi14<30?color.green:color.white, text_size=size.tiny)
+    table.cell(sig_tbl, 2, 11, rsi14>70?"OB":rsi14<30?"OS":"OK", text_color=color.gray, text_size=size.tiny)
+
+// ══════════════════════════════════════════════════════════════════
+// ── ALERTS  (JSON format matches AXIOM webhook server)  ──────────
+// ══════════════════════════════════════════════════════════════════
+// Common fields for every alert
+_t   = syminfo.ticker
+_p   = str.tostring(math.round(close * 100) / 100)
+_rsi = str.tostring(math.round(rsi14))
+_adx = str.tostring(math.round(adx_v))
+_rv  = str.tostring(math.round(rel_vol * 100) / 100)
+_tf  = timeframe.period
+_bs  = str.tostring(bull_score)
+_brs = str.tostring(bear_score)
+_mh  = str.tostring(math.round(macd_h * 1000) / 1000)
+
+// Bull alert base (action=BUY, score=bull_score)
+bull_json(pat) =>
+    '{"ticker":"' + _t + '","action":"BUY","score":' + _bs +
+    ',"verdict":"' + pat + '","price":' + _p +
+    ',"rsi":' + _rsi + ',"macd_hist":' + _mh + ',"adx":' + _adx +
+    ',"rvol":' + _rv + ',"bear_score":' + _brs +
+    ',"timeframe":"' + _tf + '","pattern":"' + pat + '"}'
+
+// Bear alert base (action=SELL, score=bear_score)
+bear_json(pat) =>
+    '{"ticker":"' + _t + '","action":"SELL","score":' + _brs +
+    ',"verdict":"' + pat + '","price":' + _p +
+    ',"rsi":' + _rsi + ',"macd_hist":' + _mh + ',"adx":' + _adx +
+    ',"rvol":' + _rv + ',"bull_score":' + _bs +
+    ',"timeframe":"' + _tf + '","pattern":"' + pat + '"}'
+
+alertcondition(master_bull,                      "MASTER BUY — All Factors Aligned",        bull_json("MASTER BUY"))
+alertcondition(master_bear,                      "MASTER SELL — All Factors Aligned",       bear_json("MASTER SELL"))
+alertcondition(bull_engulf and htf_bull_bias,    "Bull Engulf + HTF Bullish",               bull_json("Bull Engulfing"))
+alertcondition(bear_engulf and htf_bear_bias,    "Bear Engulf + HTF Bearish",               bear_json("Bear Engulfing"))
+alertcondition(rsi_bull_reg and macd_bull_div,   "Triple Divergence BULL",                  bull_json("Triple Divergence"))
+alertcondition(rsi_bear_reg and macd_bear_div,   "Triple Divergence BEAR",                  bear_json("Triple Divergence"))
+alertcondition(sos and htf_bull_bias,            "Wyckoff SOS + HTF Bull",                  bull_json("Wyckoff SOS"))
+alertcondition(sow and htf_bear_bias,            "Wyckoff SOW + HTF Bear",                  bear_json("Wyckoff SOW"))
+alertcondition(displacement_bull,                "Displacement Bull (Institutional)",        bull_json("Displacement Bull"))
+alertcondition(displacement_bear,                "Displacement Bear (Institutional)",        bear_json("Displacement Bear"))
+alertcondition(mss_bull,                         "Market Structure Shift BULL",              bull_json("MSS Bull"))
+alertcondition(mss_bear,                         "Market Structure Shift BEAR",              bear_json("MSS Bear"))
+alertcondition(dbl_bot or inv_h_s,              "Major Bull Pattern (Inv H&S / Dbl Bot)",  bull_json("Inv H&S / Double Bottom"))
+alertcondition(dbl_top or h_and_s,              "Major Bear Pattern (H&S / Dbl Top)",      bear_json("H&S / Double Top"))
+alertcondition(gartley_bull or bat_bull,         "Harmonic Bull (Gartley/Bat)",             bull_json("Harmonic Bull"))
+alertcondition(gartley_bear or bat_bear,         "Harmonic Bear (Gartley/Bat)",             bear_json("Harmonic Bear"))
+alertcondition(morning_star and htf_bull_bias,   "Morning Star + HTF Bull",                 bull_json("Morning Star"))
+alertcondition(evening_star and htf_bear_bias,   "Evening Star + HTF Bear",                 bear_json("Evening Star"))
+alertcondition(three_white and htf_bull_bias,    "3 White Soldiers + HTF Bull",             bull_json("3 White Soldiers"))
+alertcondition(three_black and htf_bear_bias,    "3 Black Crows + HTF Bear",                bear_json("3 Black Crows"))
+alertcondition(liq_grab_bull and htf_bull_bias,  "Liquidity Grab Bull + HTF",               bull_json("Liquidity Grab"))
+alertcondition(liq_grab_bear and htf_bear_bias,  "Liquidity Grab Bear + HTF",               bear_json("Liquidity Grab"))

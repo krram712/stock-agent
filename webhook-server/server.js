@@ -25,25 +25,27 @@ app.post('/webhook', (req, res) => {
     return res.status(400).json({ error: 'Invalid payload' });
 
   const signal = {
-    id:        Date.now(),
-    ticker:    body.ticker,
-    action:    body.action,       // BUY | SELL
-    score:     body.score,        // 0-100
-    verdict:   body.verdict,
-    price:     body.price,
-    rsi:       body.rsi,
-    macd_hist: body.macd_hist,
-    cmf:       body.cmf,
-    adx:       body.adx,
-    pattern:   body.pattern,
-    timeframe: body.timeframe,
-    timestamp: new Date().toISOString(),
+    id:         Date.now(),
+    ticker:     String(body.ticker).toUpperCase(),
+    action:     String(body.action).toUpperCase(),  // BUY | SELL
+    score:      Number(body.score),                 // 0-100 master score
+    verdict:    body.verdict  || body.pattern || body.action,
+    pattern:    body.pattern  || '',
+    price:      body.price    != null ? Number(body.price)    : null,
+    rsi:        body.rsi      != null ? Number(body.rsi)      : null,
+    macd_hist:  body.macd_hist!= null ? Number(body.macd_hist): null,
+    adx:        body.adx      != null ? Number(body.adx)      : null,
+    rvol:       body.rvol     != null ? Number(body.rvol)     : null,
+    bull_score: body.bull_score != null ? Number(body.bull_score) : null,
+    bear_score: body.bear_score != null ? Number(body.bear_score) : null,
+    timeframe:  body.timeframe || body.tf || '',
+    timestamp:  new Date().toISOString(),
   };
 
   signals.unshift(signal);
   if (signals.length > 500) signals.pop();
 
-  console.log(`[AXIOM] ${signal.action} ${signal.ticker} score=${signal.score} price=${signal.price}`);
+  console.log(`[AXIOM] ${signal.action} ${signal.ticker} score=${signal.score} pattern="${signal.pattern}" price=${signal.price}`);
 
   // Broadcast to all SSE subscribers
   const sseData = `data: ${JSON.stringify(signal)}\n\n`;

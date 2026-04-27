@@ -332,24 +332,35 @@ export default function AnalysisDashboard() {
                 <div style={{ fontSize: 28, marginBottom: 10, opacity: 0.2 }}>📡</div>
                 <div style={{ fontSize: 12, marginBottom: 8 }}>No signals yet</div>
                 <div style={{ fontSize: 10, color: '#0e1e26', lineHeight: 2 }}>
-                  1. Deploy <code style={{ color: '#00d4ff' }}>webhook-server/</code> to Railway/Render<br/>
-                  2. Set <code style={{ color: '#00d4ff' }}>VITE_WEBHOOK_URL</code> in .env<br/>
-                  3. Paste webhook URL into TradingView Pine Script alert
+                  1. Add <code style={{ color: '#00d4ff' }}>AXIOM-Master-Pattern-Signal.pine</code> to TradingView<br/>
+                  2. Create alert → Webhook URL: <code style={{ color: '#00d4ff' }}>https://stockagentify.com/webhook</code><br/>
+                  3. Enable all 22 alert conditions for maximum signals
                 </div>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {tvSignals.map(s => (
-                  <div key={s.id} style={{ background: 'rgba(255,255,255,0.018)', borderLeft: `3px solid ${s.action === 'BUY' ? '#00ff88' : '#ef4444'}`, border: `1px solid ${s.action === 'BUY' ? 'rgba(0,255,136,0.15)' : 'rgba(239,68,68,0.15)'}`, borderRadius: 8, padding: '10px 14px', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 11, fontWeight: 800, color: s.action === 'BUY' ? '#00ff88' : '#ef4444', minWidth: 36 }}>{s.action}</span>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: '#c8d6e0' }}>{s.ticker}</span>
-                    <span style={{ fontSize: 12, color: '#fbbf24' }}>${s.price?.toFixed(2)}</span>
-                    <span style={{ fontSize: 10, color: '#00d4ff' }}>Score {s.score}</span>
-                    <span style={{ fontSize: 10, color: '#94a3b8' }}>RSI {s.rsi?.toFixed(1)}</span>
-                    <span style={{ fontSize: 10, color: '#94a3b8' }}>{s.pattern}</span>
-                    <span style={{ fontSize: 9, color: '#2a4050', marginLeft: 'auto' }}>{new Date(s.timestamp).toLocaleTimeString()}</span>
-                  </div>
-                ))}
+                {tvSignals.map(s => {
+                  const isBuy = s.action === 'BUY';
+                  const col   = isBuy ? '#00ff88' : '#ef4444';
+                  const oppScore = isBuy ? (s as any).bear_score : (s as any).bull_score;
+                  const rvol = (s as any).rvol;
+                  return (
+                    <div key={s.id} style={{ background: 'rgba(255,255,255,0.018)', borderLeft: `3px solid ${col}`, border: `1px solid ${col}25`, borderRadius: 8, padding: '10px 14px' }}>
+                      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: s.pattern ? 4 : 0 }}>
+                        <span style={{ fontSize: 11, fontWeight: 800, color: col, minWidth: 36 }}>{s.action}</span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: '#c8d6e0' }}>{s.ticker}</span>
+                        {s.price != null && <span style={{ fontSize: 12, color: '#fbbf24' }}>${Number(s.price).toFixed(2)}</span>}
+                        <span style={{ padding: '2px 8px', background: `${col}18`, border: `1px solid ${col}40`, borderRadius: 99, fontSize: 10, color: col, fontWeight: 700 }}>Score {s.score}</span>
+                        {s.rsi   != null && <span style={{ fontSize: 10, color: '#94a3b8' }}>RSI {Number(s.rsi).toFixed(0)}</span>}
+                        {s.adx   != null && <span style={{ fontSize: 10, color: '#94a3b8' }}>ADX {Number(s.adx).toFixed(0)}</span>}
+                        {rvol    != null && <span style={{ fontSize: 10, color: rvol > 2 ? '#a78bfa' : rvol > 1.5 ? '#fbbf24' : '#3d5a6e' }}>Vol {Number(rvol).toFixed(1)}x</span>}
+                        {oppScore != null && <span style={{ fontSize: 9, color: '#3d5a6e' }}>{isBuy ? 'Bear' : 'Bull'}: {oppScore}</span>}
+                        <span style={{ fontSize: 9, color: '#2a4050', marginLeft: 'auto' }}>{s.timeframe && <>{s.timeframe} · </>}{new Date(s.timestamp).toLocaleTimeString()}</span>
+                      </div>
+                      {s.pattern && <div style={{ fontSize: 10, color: '#00d4ff', paddingLeft: 48 }}>▸ {s.pattern}</div>}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
