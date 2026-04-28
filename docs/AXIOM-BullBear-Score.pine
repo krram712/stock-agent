@@ -171,11 +171,7 @@ normalized = math.round((raw_score + 80) / 185 * 100)
 final_score = math.max(0, math.min(100, normalized))
 
 // Verdict
-verdict = final_score >= score_thresh_bull ? "STRONG BULL" :
-          final_score >= 55               ? "MILD BULL"   :
-          final_score >= 45               ? "NEUTRAL"     :
-          final_score >= score_thresh_bear ? "MILD BEAR"  :
-                                            "STRONG BEAR"
+verdict = final_score >= score_thresh_bull ? "STRONG BULL" : final_score >= 55 ? "MILD BULL" : final_score >= 45 ? "NEUTRAL" : final_score >= score_thresh_bear ? "MILD BEAR" : "STRONG BEAR"
 
 // ══════════════════════════════════════════════════════════
 // 7. PLOTS & VISUALS
