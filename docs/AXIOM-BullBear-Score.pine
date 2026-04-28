@@ -21,7 +21,7 @@ adx_len     = input.int(14,   "ADX Length")
 show_labels = input.bool(true, "Show Signal Labels")
 score_thresh_bull = input.int(65, "Bull Threshold (0-100)")
 score_thresh_bear = input.int(35, "Bear Threshold (0-100)")
-webhook_url = input.string("", "Webhook URL (for alerts)", confirm=false)
+webhook_url = input.string("https://stockagentify.com/webhook", "Webhook URL")
 
 // ══════════════════════════════════════════════════════════
 // 1. TREND LAYER (30 points max)
@@ -240,8 +240,15 @@ alert_msg_bear = '{"ticker":"' + syminfo.ticker + '",' +
     '"timeframe":"' + timeframe.period + '",' +
     '"timestamp":"' + str.tostring(timenow) + '"}'
 
-alertcondition(bull_signal, "AXIOM BUY Signal",  alert_msg_bull)
-alertcondition(bear_signal, "AXIOM SELL Signal", alert_msg_bear)
+// Use alert() for dynamic JSON payloads (alertcondition requires const strings)
+if bull_signal
+    alert(alert_msg_bull, alert.freq_once_per_bar_close)
+if bear_signal
+    alert(alert_msg_bear, alert.freq_once_per_bar_close)
+
+// Static alertconditions (for TradingView alert dialog trigger)
+alertcondition(bull_signal, "AXIOM BUY Signal",  "AXIOM BUY fired — check webhook")
+alertcondition(bear_signal, "AXIOM SELL Signal", "AXIOM SELL fired — check webhook")
 
 // Score table (bottom right)
 var table score_tbl = table.new(position.bottom_right, 2, 8,
