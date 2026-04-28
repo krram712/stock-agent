@@ -237,28 +237,86 @@ const DEFAULT_TICKER_DATA = { hv20: 30.0, hv60: 32.0, ivRank: 40, beta: 1.2, ear
 // ─── Main OptionsEngine component ─────────────────────────────
 interface Props { ticker: string; price?: number; overallScore?: number; }
 
-export default function OptionsEngine({ ticker, price, overallScore }: Props) {
+interface LiveData {
+  price: number;
+  hv20: number;
+  ivRank: number;
+  beta: number;
+  atr: number;
+  bollingerWidth: number;
+  loading: boolean;
+  error: boolean;
+}
+
+import { api } from '../services/api';
+
+export default function OptionsEngine({ ticker, price: propPrice, overallScore }: Props) {
   const [dte, setDte] = useState(30);
   const [selStrat, setSelStrat] = useState<string | null>(null);
   const [analysisTab, setAnalysisTab] = useState<'strategy' | 'greeks' | 'pnl' | 'chain'>('strategy');
   const [optionType, setOptionType] = useState<'call' | 'put'>('call');
   const [customStrike, setCustomStrike] = useState('');
+  const [live, setLive] = useState<LiveData>({ price: 0, hv20: 0, ivRank: 0, beta: 1.2, atr: 0, bollingerWidth: 0, loading: true, error: false });
 
-  // Reset on ticker change
-  useEffect(() => { setSelStrat(null); setCustomStrike(''); }, [ticker]);
+  // Fetch live quote + technicals on ticker change
+  useEffect(() => {
+    if (!ticker) return;
+    setSelStrat(null);
+    setCustomStrike('');
+    setLive(prev => ({ ...prev, loading: true, error: false }));
 
-  const tdata = TICKER_DATA[ticker] || DEFAULT_TICKER_DATA;
-  const S = price && price > 0 ? price : 100;
+    Promise.all([
+      api.stocks.quote(ticker).catch(() => null),
+      api.stocks.technicals(ticker).catch(() => null),
+    ]).then(([quoteRes, techRes]) => {
+      const q = quoteRes?.data;
+      const t = techRes?.data;
+      const livePrice = q?.price ? Number(q.price) : 0;
+      const atr       = t?.atr14  ? Number(t.atr14)  : 0;
+      const bw        = t?.bollingerWidth ? Number(t.bollingerWidth) : 0;
+
+      // HV20 proxy: ATR annualized — ATR/price * sqrt(252)
+      const fallback  = TICKER_DATA[ticker] || DEFAULT_TICKER_DATA;
+      const hv20      = livePrice > 0 && atr > 0
+        ? Math.round(atr / livePrice * Math.sqrt(252) * 100 * 10) / 10
+        : fallback.hv20;
+
+      // IV rank proxy from Bollinger Width percentile (wider BB = higher realized vol)
+      // Use Bollinger Width / price as a normalised measure, map 0-15% → 0-100 ivRank
+      const ivRank = livePrice > 0 && bw > 0
+        ? Math.min(100, Math.round(bw / livePrice * 100 / 0.15 * 100))
+        : fallback.ivRank;
+
+      setLive({
+        price:         livePrice,
+        hv20,
+        ivRank,
+        beta:          fallback.beta,
+        atr,
+        bollingerWidth: bw,
+        loading:       false,
+        error:         !livePrice && !atr,
+      });
+    });
+  }, [ticker]);
+
+  const fallback = TICKER_DATA[ticker] || DEFAULT_TICKER_DATA;
+  // Use live price if available, then prop price, then fallback
+  const S = (live.price > 0 ? live.price : propPrice && propPrice > 0 ? propPrice : fallback.hv20 > 0 ? 100 : 100);
+  const hv20    = live.hv20    > 0 ? live.hv20    : fallback.hv20;
+  const ivRank  = live.ivRank  > 0 ? live.ivRank  : fallback.ivRank;
+
   const T = dte / 365;
-  const r = 0.0525; // risk-free rate
-  const q = 0.005;  // dividend yield
+  const r = 0.0525;
+  const q = 0.005;
 
   const rng = useMemo(() => seededRng(strSeed(ticker)), [ticker]);
 
+  // IV proxy = HV20 * typical IV/HV premium (1.10–1.35)
   const ivProxy = useMemo(() => {
     const rng2 = seededRng(strSeed(ticker + 'iv'));
-    return tdata.hv20 * (1.10 + rng2() * 0.25);
-  }, [ticker, tdata.hv20]);
+    return hv20 * (1.10 + rng2() * 0.25);
+  }, [ticker, hv20]);
 
   const sigma = ivProxy / 100;
   const K = customStrike ? parseFloat(customStrike) : Math.round(S / 5) * 5 || S;
@@ -273,21 +331,20 @@ export default function OptionsEngine({ ticker, price, overallScore }: Props) {
   const upper1sd   = (S + expMove).toFixed(2);
   const lower1sd   = (S - expMove).toFixed(2);
 
-  const vrp        = ivProxy - tdata.hv20;
-  const ivRank     = tdata.ivRank;
+  const vrp        = ivProxy - hv20;
   const pcr        = ivRank > 50 ? 1.3 - (ivRank - 50) * 0.01 : 0.7 + (50 - ivRank) * 0.01;
-  const hasEarnings = tdata.earnings !== 'N/A';
+  const hasEarnings = fallback.earnings !== 'N/A';
 
-  // Derive trend from score if available, else from HV
+  // Derive trend from score if available, else from IV rank
   const trend = overallScore != null
     ? (overallScore >= 58 ? 'bull' : overallScore <= 42 ? 'bear' : 'neutral')
-    : (tdata.hv20 > tdata.hv60 ? 'bear' : tdata.ivRank < 35 ? 'bull' : 'neutral');
+    : (ivRank < 35 ? 'bull' : ivRank > 60 ? 'bear' : 'neutral');
 
   const strategies = useMemo(() => selectStrategy({
     ivRank, ivProxy, vrp, trend,
     adx: 20 + rng() * 15,
-    pcr, gexPositive: ivProxy < tdata.hv60, hasEarnings,
-  }), [ticker, dte, trend]);
+    pcr, gexPositive: ivProxy < hv20 * 1.1, hasEarnings,
+  }), [ticker, dte, trend, ivRank, ivProxy, hv20]);
 
   const best = strategies[0];
   const activeStrat = selStrat || best?.id;
@@ -310,6 +367,9 @@ export default function OptionsEngine({ ticker, price, overallScore }: Props) {
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 12 }}>
           <div style={{ fontSize: 22, fontWeight: 800, color: '#00ff88', letterSpacing: 2 }}>{ticker}</div>
           <div style={{ fontSize: 16, color: '#c8d6e0', fontWeight: 700 }}>${S.toFixed(2)}</div>
+          {live.loading && <div style={{ fontSize: 9, color: '#2a4050' }}>⟳ loading live data…</div>}
+          {!live.loading && live.price > 0 && <div style={{ fontSize: 9, color: '#00ff88' }}>● LIVE</div>}
+          {!live.loading && live.error && <div style={{ fontSize: 9, color: '#fbbf24' }}>⚠ using estimates</div>}
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap' }}>
             <div style={{ fontSize: 8, letterSpacing: 2, color: '#2a4050', alignSelf: 'center' }}>DTE:</div>
             {[7, 14, 21, 30, 45, 60, 90].map(d => (
@@ -325,13 +385,13 @@ export default function OptionsEngine({ ticker, price, overallScore }: Props) {
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(90px,1fr))', gap: 6 }}>
           {[
-            { l: 'IV (PROXY)',  v: `${ivProxy.toFixed(1)}%`, c: ivProxy > tdata.hv60 ? '#ef4444' : '#00ff88' },
-            { l: 'HV20',       v: `${tdata.hv20}%`,         c: '#94a3b8' },
+            { l: 'IV (PROXY)',  v: `${ivProxy.toFixed(1)}%`, c: ivProxy > hv20 * 1.2 ? '#ef4444' : '#00ff88' },
+            { l: 'HV20',       v: `${hv20.toFixed(1)}%`,    c: '#94a3b8' },
             { l: 'VRP',        v: `${vrp > 0 ? '+' : ''}${vrp.toFixed(1)}%`, c: vrp > 0 ? '#ef4444' : '#00ff88' },
-            { l: 'IV RANK',    v: `${ivRank}%ile`,          c: ivRank > 50 ? '#ef4444' : '#00ff88' },
+            { l: 'IV RANK',    v: `${ivRank}%ile`,           c: ivRank > 50 ? '#ef4444' : '#00ff88' },
             { l: 'EXP MOVE',   v: `±${expMovePct.toFixed(1)}%`, c: '#00d4ff' },
-            { l: 'TREND',      v: trend.toUpperCase(),       c: trend === 'bull' ? '#00ff88' : trend === 'bear' ? '#ef4444' : '#94a3b8' },
-            { l: 'BETA',       v: String(tdata.beta),        c: '#94a3b8' },
+            { l: 'TREND',      v: trend.toUpperCase(),        c: trend === 'bull' ? '#00ff88' : trend === 'bear' ? '#ef4444' : '#94a3b8' },
+            { l: 'BETA',       v: live.beta.toFixed(2),       c: '#94a3b8' },
           ].map(item => (
             <div key={item.l} style={{ background: 'rgba(255,255,255,0.018)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 6, padding: '6px 8px', textAlign: 'center' }}>
               <div style={{ fontSize: 7, letterSpacing: 1, color: '#2a4050', marginBottom: 2 }}>{item.l}</div>
@@ -361,8 +421,8 @@ export default function OptionsEngine({ ticker, price, overallScore }: Props) {
               <div style={{ flex: 1, fontSize: 10, color: '#4a6070', lineHeight: 1.8 }}>
                 <div>IV Rank: <strong style={{ color: ivRank > 50 ? '#ef4444' : '#00ff88' }}>{ivRank}%</strong></div>
                 <div>VRP: <strong style={{ color: vrp > 0 ? '#ef4444' : '#00ff88' }}>{vrp > 0 ? '+' : ''}{vrp.toFixed(1)}%</strong></div>
-                <div>GEX: <strong style={{ color: ivProxy < tdata.hv60 ? '#00ff88' : '#ef4444' }}>{ivProxy < tdata.hv60 ? 'POSITIVE (Range)' : 'NEGATIVE (Trending)'}</strong></div>
-                <div>Term: <strong style={{ color: tdata.hv20 < tdata.hv60 ? '#00ff88' : '#ef4444' }}>{tdata.hv20 < tdata.hv60 ? 'CONTANGO' : 'BACKWARDATION'}</strong></div>
+                <div>GEX: <strong style={{ color: ivProxy < hv20 * 1.1 ? '#00ff88' : '#ef4444' }}>{ivProxy < hv20 * 1.1 ? 'POSITIVE (Range)' : 'NEGATIVE (Trending)'}</strong></div>
+                <div>ATR: <strong style={{ color: '#94a3b8' }}>${live.atr > 0 ? live.atr.toFixed(2) : '—'}</strong></div>
               </div>
             </div>
           </div>
@@ -444,9 +504,9 @@ export default function OptionsEngine({ ticker, price, overallScore }: Props) {
                 { label: 'IV Rank favorable', ok: strat?.id?.includes('condor') || strat?.id?.includes('covered') || strat?.id?.includes('put') ? ivRank > 40 : ivRank < 45, desc: strat?.bestIV },
                 { label: 'Trend alignment',   ok: strat?.id === 'long_call' ? trend === 'bull' : strat?.id === 'long_put' ? trend === 'bear' : true, desc: 'Directional bias check' },
                 { label: 'VRP edge',          ok: vrp > 2 ? (!!strat?.id?.includes('condor') || !!strat?.id?.includes('covered')) : vrp < 0, desc: `VRP: ${vrp.toFixed(1)}%` },
-                { label: 'Earnings timing',   ok: strat?.id === 'straddle' ? hasEarnings : !hasEarnings, desc: tdata.earnings !== 'N/A' ? `Earnings: ${tdata.earnings}` : 'No near-term earnings' },
+                { label: 'Earnings timing',   ok: strat?.id === 'straddle' ? hasEarnings : !hasEarnings, desc: fallback.earnings !== 'N/A' ? `Earnings: ${fallback.earnings}` : 'No near-term earnings' },
                 { label: 'Premium value',     ok: stratPremium > 0.5, desc: `$${(stratPremium * 100).toFixed(0)}/contract` },
-                { label: 'GEX regime',        ok: !!strat?.id?.includes('condor') ? ivProxy < tdata.hv60 : true, desc: ivProxy < tdata.hv60 ? 'Positive (range)' : 'Negative (trending)' },
+                { label: 'GEX regime',        ok: !!strat?.id?.includes('condor') ? ivProxy < hv20 * 1.05 : true, desc: ivProxy < hv20 * 1.05 ? 'Positive (range)' : 'Negative (trending)' },
               ].map(item => (
                 <div key={item.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
