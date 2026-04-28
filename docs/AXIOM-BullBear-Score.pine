@@ -183,19 +183,14 @@ plot(ema200, "EMA 200", color=color.new(color.red,    0), linewidth=2)
 plot(vwap_val, "VWAP",  color=color.new(color.yellow, 0), linewidth=1, style=plot.style_circles)
 
 // Bar coloring by score
-bar_color = final_score >= score_thresh_bull ? color.new(color.green, 40) :
-            final_score >= 55 ? color.new(color.lime, 60) :
-            final_score >= 45 ? color.new(color.gray, 60) :
-            final_score >= score_thresh_bear ? color.new(color.orange, 60) :
-            color.new(color.red, 40)
+bar_color = final_score >= score_thresh_bull ? color.new(color.green, 40) : final_score >= 55 ? color.new(color.lime, 60) : final_score >= 45 ? color.new(color.gray, 60) : final_score >= score_thresh_bear ? color.new(color.orange, 60) : color.new(color.red, 40)
 barcolor(bar_color)
 
 // Score label on chart
 if show_labels and barstate.islast
     label.new(bar_index, high * 1.01,
         "AXIOM Score: " + str.tostring(final_score) + "/100\n" + verdict,
-        color=final_score >= score_thresh_bull ? color.green :
-              final_score <= score_thresh_bear ? color.red : color.gray,
+        color=final_score >= score_thresh_bull ? color.green : final_score <= score_thresh_bear ? color.red : color.gray,
         textcolor=color.white, style=label.style_label_down, size=size.small)
 
 // Buy/Sell signals
@@ -208,33 +203,10 @@ plotshape(bear_signal, "SELL Signal", shape.triangledown,  location.abovebar, co
 // ══════════════════════════════════════════════════════════
 // 8. WEBHOOK ALERTS → AXIOM APP
 // ══════════════════════════════════════════════════════════
-alert_msg_bull = '{"ticker":"' + syminfo.ticker + '",' +
-    '"action":"BUY",' +
-    '"score":' + str.tostring(final_score) + ',' +
-    '"verdict":"' + verdict + '",' +
-    '"price":' + str.tostring(close) + ',' +
-    '"ema20":' + str.tostring(math.round(ema20 * 100) / 100) + ',' +
-    '"rsi":' + str.tostring(math.round(rsi_val * 10) / 10) + ',' +
-    '"macd_hist":' + str.tostring(math.round(macd_hist * 1000) / 1000) + ',' +
-    '"cmf":' + str.tostring(math.round(cmf_val * 1000) / 1000) + ',' +
-    '"adx":' + str.tostring(math.round(adx_val * 10) / 10) + ',' +
-    '"pattern":"' + (bull_engulf ? "BullEngulf" : bull_pin ? "BullPin" : morning_star ? "MorningStar" : "None") + '",' +
-    '"timeframe":"' + timeframe.period + '",' +
-    '"timestamp":"' + str.tostring(timenow) + '"}'
-
-alert_msg_bear = '{"ticker":"' + syminfo.ticker + '",' +
-    '"action":"SELL",' +
-    '"score":' + str.tostring(final_score) + ',' +
-    '"verdict":"' + verdict + '",' +
-    '"price":' + str.tostring(close) + ',' +
-    '"ema20":' + str.tostring(math.round(ema20 * 100) / 100) + ',' +
-    '"rsi":' + str.tostring(math.round(rsi_val * 10) / 10) + ',' +
-    '"macd_hist":' + str.tostring(math.round(macd_hist * 1000) / 1000) + ',' +
-    '"cmf":' + str.tostring(math.round(cmf_val * 1000) / 1000) + ',' +
-    '"adx":' + str.tostring(math.round(adx_val * 10) / 10) + ',' +
-    '"pattern":"' + (bear_engulf ? "BearEngulf" : bear_pin ? "BearPin" : evening_star ? "EveningStar" : "None") + '",' +
-    '"timeframe":"' + timeframe.period + '",' +
-    '"timestamp":"' + str.tostring(timenow) + '"}'
+_bull_pat = bull_engulf ? "BullEngulf" : bull_pin ? "BullPin" : morning_star ? "MorningStar" : "None"
+_bear_pat = bear_engulf ? "BearEngulf" : bear_pin ? "BearPin" : evening_star ? "EveningStar" : "None"
+alert_msg_bull = '{"ticker":"' + syminfo.ticker + '","action":"BUY","score":' + str.tostring(final_score) + ',"verdict":"' + verdict + '","price":' + str.tostring(close) + ',"rsi":' + str.tostring(math.round(rsi_val * 10) / 10) + ',"macd_hist":' + str.tostring(math.round(macd_hist * 1000) / 1000) + ',"cmf":' + str.tostring(math.round(cmf_val * 1000) / 1000) + ',"adx":' + str.tostring(math.round(adx_val * 10) / 10) + ',"pattern":"' + _bull_pat + '","timeframe":"' + timeframe.period + '"}'
+alert_msg_bear = '{"ticker":"' + syminfo.ticker + '","action":"SELL","score":' + str.tostring(final_score) + ',"verdict":"' + verdict + '","price":' + str.tostring(close) + ',"rsi":' + str.tostring(math.round(rsi_val * 10) / 10) + ',"macd_hist":' + str.tostring(math.round(macd_hist * 1000) / 1000) + ',"cmf":' + str.tostring(math.round(cmf_val * 1000) / 1000) + ',"adx":' + str.tostring(math.round(adx_val * 10) / 10) + ',"pattern":"' + _bear_pat + '","timeframe":"' + timeframe.period + '"}'
 
 // Use alert() for dynamic JSON payloads (alertcondition requires const strings)
 if bull_signal
@@ -251,9 +223,7 @@ var table score_tbl = table.new(position.bottom_right, 2, 8,
     bgcolor=color.new(color.black, 30), border_color=color.gray, border_width=1)
 if barstate.islast
     table.cell(score_tbl, 0, 0, "AXIOM SCORE",    text_color=color.white,  text_size=size.small)
-    table.cell(score_tbl, 1, 0, str.tostring(final_score) + " — " + verdict,
-        text_color=final_score >= 65 ? color.green : final_score <= 35 ? color.red : color.yellow,
-        text_size=size.small)
+    table.cell(score_tbl, 1, 0, str.tostring(final_score) + " — " + verdict, text_color=final_score >= 65 ? color.green : final_score <= 35 ? color.red : color.yellow, text_size=size.small)
     table.cell(score_tbl, 0, 1, "Trend",    text_color=color.gray, text_size=size.tiny)
     table.cell(score_tbl, 1, 1, str.tostring(trend_score),  text_color=trend_score > 0 ? color.green : color.red, text_size=size.tiny)
     table.cell(score_tbl, 0, 2, "Momentum", text_color=color.gray, text_size=size.tiny)
