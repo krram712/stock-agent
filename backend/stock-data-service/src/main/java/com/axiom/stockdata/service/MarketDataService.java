@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.http.ResponseCookie;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -15,6 +16,7 @@ import java.time.*;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.HashMap;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Slf4j
 @Service
@@ -24,9 +26,64 @@ public class MarketDataService {
     private final TechnicalAnalysisEngine technicalEngine;
     private final WebClient.Builder webClientBuilder;
 
-    // Yahoo Finance base URLs (no API key required)
+    // Yahoo Finance base URLs
     private static final String YAHOO_CHART_URL   = "https://query1.finance.yahoo.com";
     private static final String YAHOO_CHART_URL2  = "https://query2.finance.yahoo.com";
+
+    // Cached Yahoo crumb (valid ~1 hour)
+    private final AtomicReference<String> yahooCrumb   = new AtomicReference<>(null);
+    private final AtomicReference<String> yahooCookie  = new AtomicReference<>(null);
+    private volatile long crumbFetchedAt = 0;
+
+    private String getYahooCrumb() {
+        long now = System.currentTimeMillis();
+        if (yahooCrumb.get() != null && (now - crumbFetchedAt) < 55 * 60 * 1000) {
+            return yahooCrumb.get();
+        }
+        try {
+            var response = webClientBuilder.baseUrl("https://fc.yahoo.com").build()
+                .get().uri("/")
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36")
+                .header("Accept", "text/html,application/xhtml+xml")
+                .exchangeToMono(r -> {
+                    String cookie = r.cookies().values().stream()
+                        .flatMap(Collection::stream)
+                        .filter(c -> c.getName().startsWith("A1") || c.getName().equals("cmp"))
+                        .map(c -> c.getName() + "=" + c.getValue())
+                        .findFirst().orElse(null);
+                    yahooCookie.set(cookie);
+                    return r.bodyToMono(String.class);
+                }).block(Duration.ofSeconds(8));
+
+            String crumb = webClientBuilder.baseUrl(YAHOO_CHART_URL).build()
+                .get().uri("/v1/test/getcrumb")
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36")
+                .header("Cookie", yahooCookie.get() != null ? yahooCookie.get() : "")
+                .retrieve().bodyToMono(String.class).block(Duration.ofSeconds(8));
+
+            if (crumb != null && !crumb.isBlank() && !crumb.contains("error")) {
+                yahooCrumb.set(crumb.trim());
+                crumbFetchedAt = now;
+                log.info("✅ Yahoo crumb refreshed: {}", crumb.trim().substring(0, Math.min(6, crumb.trim().length())) + "…");
+                return yahooCrumb.get();
+            }
+        } catch (Exception e) {
+            log.warn("Yahoo crumb fetch failed: {}", e.getMessage());
+        }
+        return null;
+    }
+
+    private WebClient.RequestHeadersSpec<?> yahooGet(String baseUrl, String path) {
+        String crumb  = getYahooCrumb();
+        String cookie = yahooCookie.get();
+        String fullPath = crumb != null ? path + (path.contains("?") ? "&" : "?") + "crumb=" + crumb : path;
+        var req = webClientBuilder.baseUrl(baseUrl).build().get().uri(fullPath)
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36")
+            .header("Accept", "application/json,text/plain,*/*")
+            .header("Referer", "https://finance.yahoo.com/");
+        if (cookie != null) req = ((WebClient.RequestHeadersSpec<?>) req).header("Cookie", cookie);
+        return req;
+    }
 
     @Value("${market-data.alpha-vantage.api-key:demo}")
     private String alphaVantageKey;
@@ -65,17 +122,12 @@ public class MarketDataService {
     // YAHOO FINANCE — QUOTE (PRIMARY, free forever)
     // ═══════════════════════════════════════════════════════════════
     private StockQuote fetchLiveQuoteYahoo(String ticker) {
-        String url = YAHOO_CHART_URL;
+        String path = "/v8/finance/chart/" + ticker + "?interval=1d&range=1d&includePrePost=false";
         JsonNode root;
         try {
-            root = webClientBuilder.baseUrl(url).build().get()
-                .uri("/v8/finance/chart/" + ticker + "?interval=1d&range=1d&includePrePost=false")
-                .retrieve().bodyToMono(JsonNode.class).block(Duration.ofSeconds(12));
+            root = yahooGet(YAHOO_CHART_URL, path).retrieve().bodyToMono(JsonNode.class).block(Duration.ofSeconds(12));
         } catch (Exception e) {
-            // Fallback to query2
-            root = webClientBuilder.baseUrl(YAHOO_CHART_URL2).build().get()
-                .uri("/v8/finance/chart/" + ticker + "?interval=1d&range=1d&includePrePost=false")
-                .retrieve().bodyToMono(JsonNode.class).block(Duration.ofSeconds(12));
+            root = yahooGet(YAHOO_CHART_URL2, path).retrieve().bodyToMono(JsonNode.class).block(Duration.ofSeconds(12));
         }
 
         JsonNode meta = root.path("chart").path("result").path(0).path("meta");
@@ -111,17 +163,13 @@ public class MarketDataService {
     // YAHOO FINANCE — OHLCV HISTORY (PRIMARY)
     // ═══════════════════════════════════════════════════════════════
     private Map<String, List<BigDecimal>> fetchDailyOHLCVYahoo(String ticker, int limit) {
-        // map limit to Yahoo range param
         String range = limit <= 7 ? "5d" : limit <= 30 ? "1mo" : limit <= 90 ? "3mo" : limit <= 180 ? "6mo" : "1y";
+        String path  = "/v8/finance/chart/" + ticker + "?interval=1d&range=" + range;
         JsonNode root;
         try {
-            root = webClientBuilder.baseUrl(YAHOO_CHART_URL).build().get()
-                .uri("/v8/finance/chart/" + ticker + "?interval=1d&range=" + range)
-                .retrieve().bodyToMono(JsonNode.class).block(Duration.ofSeconds(15));
+            root = yahooGet(YAHOO_CHART_URL, path).retrieve().bodyToMono(JsonNode.class).block(Duration.ofSeconds(15));
         } catch (Exception e) {
-            root = webClientBuilder.baseUrl(YAHOO_CHART_URL2).build().get()
-                .uri("/v8/finance/chart/" + ticker + "?interval=1d&range=" + range)
-                .retrieve().bodyToMono(JsonNode.class).block(Duration.ofSeconds(15));
+            root = yahooGet(YAHOO_CHART_URL2, path).retrieve().bodyToMono(JsonNode.class).block(Duration.ofSeconds(15));
         }
 
         JsonNode result  = root.path("chart").path("result").path(0);
@@ -154,15 +202,12 @@ public class MarketDataService {
     // ═══════════════════════════════════════════════════════════════
     private Map<String, Object> fetchFundamentalsYahoo(String ticker) {
         String modules = "summaryDetail,defaultKeyStatistics,financialData,price";
+        String path    = "/v10/finance/quoteSummary/" + ticker + "?modules=" + modules;
         JsonNode root;
         try {
-            root = webClientBuilder.baseUrl(YAHOO_CHART_URL).build().get()
-                .uri("/v10/finance/quoteSummary/" + ticker + "?modules=" + modules)
-                .retrieve().bodyToMono(JsonNode.class).block(Duration.ofSeconds(12));
+            root = yahooGet(YAHOO_CHART_URL, path).retrieve().bodyToMono(JsonNode.class).block(Duration.ofSeconds(12));
         } catch (Exception e) {
-            root = webClientBuilder.baseUrl(YAHOO_CHART_URL2).build().get()
-                .uri("/v10/finance/quoteSummary/" + ticker + "?modules=" + modules)
-                .retrieve().bodyToMono(JsonNode.class).block(Duration.ofSeconds(12));
+            root = yahooGet(YAHOO_CHART_URL2, path).retrieve().bodyToMono(JsonNode.class).block(Duration.ofSeconds(12));
         }
 
         JsonNode res  = root.path("quoteSummary").path("result").path(0);
@@ -382,14 +427,11 @@ public class MarketDataService {
             case "1h" -> "60m"; default -> "1d";
         };
         JsonNode root;
+        String histPath = "/v8/finance/chart/" + ticker + "?interval=" + yahooInterval + "&range=" + yahooRange;
         try {
-            root = webClientBuilder.baseUrl(YAHOO_CHART_URL).build().get()
-                .uri("/v8/finance/chart/" + ticker + "?interval=" + yahooInterval + "&range=" + yahooRange)
-                .retrieve().bodyToMono(JsonNode.class).block(Duration.ofSeconds(15));
+            root = yahooGet(YAHOO_CHART_URL, histPath).retrieve().bodyToMono(JsonNode.class).block(Duration.ofSeconds(15));
         } catch (Exception e) {
-            root = webClientBuilder.baseUrl(YAHOO_CHART_URL2).build().get()
-                .uri("/v8/finance/chart/" + ticker + "?interval=" + yahooInterval + "&range=" + yahooRange)
-                .retrieve().bodyToMono(JsonNode.class).block(Duration.ofSeconds(15));
+            root = yahooGet(YAHOO_CHART_URL2, histPath).retrieve().bodyToMono(JsonNode.class).block(Duration.ofSeconds(15));
         }
 
         JsonNode result     = root.path("chart").path("result").path(0);
