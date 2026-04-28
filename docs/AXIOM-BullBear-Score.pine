@@ -188,10 +188,7 @@ barcolor(bar_color)
 
 // Score label on chart
 if show_labels and barstate.islast
-    label.new(bar_index, high * 1.01,
-        "AXIOM Score: " + str.tostring(final_score) + "/100\n" + verdict,
-        color=final_score >= score_thresh_bull ? color.green : final_score <= score_thresh_bear ? color.red : color.gray,
-        textcolor=color.white, style=label.style_label_down, size=size.small)
+    label.new(bar_index, high * 1.01, "AXIOM Score: " + str.tostring(final_score) + "/100\n" + verdict, color=final_score >= score_thresh_bull ? color.green : final_score <= score_thresh_bear ? color.red : color.gray, textcolor=color.white, style=label.style_label_down, size=size.small)
 
 // Buy/Sell signals
 bull_signal = ta.crossover(final_score, score_thresh_bull)  or bull_engulf or morning_star
@@ -219,8 +216,7 @@ alertcondition(bull_signal, "AXIOM BUY Signal",  "AXIOM BUY fired — check webh
 alertcondition(bear_signal, "AXIOM SELL Signal", "AXIOM SELL fired — check webhook")
 
 // Score table (bottom right)
-var table score_tbl = table.new(position.bottom_right, 2, 8,
-    bgcolor=color.new(color.black, 30), border_color=color.gray, border_width=1)
+var table score_tbl = table.new(position.bottom_right, 2, 8, bgcolor=color.new(color.black, 30), border_color=color.gray, border_width=1)
 if barstate.islast
     table.cell(score_tbl, 0, 0, "AXIOM SCORE",    text_color=color.white,  text_size=size.small)
     table.cell(score_tbl, 1, 0, str.tostring(final_score) + " — " + verdict, text_color=final_score >= 65 ? color.green : final_score <= 35 ? color.red : color.yellow, text_size=size.small)
