@@ -9,6 +9,7 @@ import TradingViewMiniChart from './TradingViewMiniChart';
 import { useTradingViewSignals } from '../hooks/useTradingViewSignals';
 import OptionsEngine from './OptionsEngine';
 import FinvizPanel from './FinvizPanel';
+import ScriptsTab from './ScriptsTab';
 
 const HORIZONS = [
   { id: 'day', label: 'Day Trade' },
@@ -74,7 +75,7 @@ export default function AnalysisDashboard() {
   ] as const;
   const [webResearch, setWebResearch] = useState<Record<string, ResearchState>>({});
   const [chartInterval, setChartInterval] = useState<'D' | '60' | '15' | 'W'>('D');
-  const [activeTab, setActiveTab] = useState<'analysis' | 'signals' | 'history' | 'watchlist' | 'options' | 'admin'>('analysis');
+  const [activeTab, setActiveTab] = useState<'analysis' | 'signals' | 'history' | 'watchlist' | 'options' | 'scripts' | 'admin'>('analysis');
   const [adminUsers, setAdminUsers] = useState<any[]>([]);
   const [adminLoading, setAdminLoading] = useState(false);
 
@@ -220,6 +221,7 @@ export default function AnalysisDashboard() {
             { id: 'history',   label: `📋 History${analysisHistory.length > 0 ? ` (${analysisHistory.length})` : ''}` },
             { id: 'watchlist', label: `👁 Watchlist${watchlists.length > 0 ? ` (${watchlists.length})` : ''}` },
             { id: 'options',   label: '⚙️ Options Engine' },
+            { id: 'scripts',   label: '📜 Scripts' },
             ...(user?.role === 'ADMIN' ? [{ id: 'admin', label: '👑 Users' }] : []),
           ].map(tab => (
             <button key={tab.id} onClick={() => { setActiveTab(tab.id as any); if (tab.id === 'admin') loadAdminUsers(); }}
@@ -462,6 +464,11 @@ export default function AnalysisDashboard() {
               })}
             </div>
           </div>
+        )}
+
+        {/* SCRIPTS TAB */}
+        {activeTab === 'scripts' && (
+          <ScriptsTab isAdmin={user?.role === 'ADMIN'} />
         )}
 
         {/* OPTIONS ENGINE TAB */}

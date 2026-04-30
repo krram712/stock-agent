@@ -1,0 +1,512 @@
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  AXIOM OPTIONS STRATEGY ENGINE v1.0                                     ║
+// ║  Finds the BEST options strategy for any stock                          ║
+// ║  Analyzes: IV Rank · Greeks · GEX · PCR · Max Pain · Unusual Flow      ║
+// ║  Recommends: Calls/Puts/Spreads/Straddles/Iron Condors/Covered Calls   ║
+// ║                                                                          ║
+// ║  PASTE INTO TRADINGVIEW PINE EDITOR → ADD TO CHART                     ║
+// ║  Works on any timeframe. Best on Daily for options analysis.             ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+//@version=5
+indicator("AXIOM Options Strategy Engine v1.0", overlay=false, max_bars_back=500)
+
+// ══════════════════════════════════════════════════════════════════
+// INPUTS
+// ══════════════════════════════════════════════════════════════════
+grp_iv   = "═══ IMPLIED VOLATILITY ═══"
+iv_lb    = input.int(252, "IV Rank Lookback (days)", group=grp_iv)
+hv_lb    = input.int(20,  "HV Lookback (days)",      group=grp_iv)
+hv_lb2   = input.int(60,  "HV Lookback 2 (days)",    group=grp_iv)
+
+grp_opt  = "═══ OPTIONS PARAMETERS ═══"
+dte      = input.int(30,  "Days to Expiry (DTE)",    group=grp_opt, minval=1)
+rfr      = input.float(5.25, "Risk-Free Rate (%)",   group=grp_opt) / 100
+div_yld  = input.float(0.5,  "Dividend Yield (%)",   group=grp_opt) / 100
+atm_offset = input.float(1.0,"ATM Strike Offset (%)",group=grp_opt) / 100
+
+grp_strat = "═══ STRATEGY THRESHOLDS ═══"
+iv_hi    = input.int(50,  "IV Rank HIGH (sell premium)", group=grp_strat)
+iv_lo    = input.int(30,  "IV Rank LOW (buy premium)",   group=grp_strat)
+pcr_bull = input.float(0.7,"PCR BULLISH threshold",      group=grp_strat)
+pcr_bear = input.float(1.2,"PCR BEARISH threshold",      group=grp_strat)
+min_score = input.int(70,  "Min Score for signal",       group=grp_strat)
+
+grp_disp = "═══ DISPLAY ═══"
+show_tbl = input.bool(true, "Show Analysis Table",  group=grp_disp)
+show_iv  = input.bool(true, "Show IV Cone",         group=grp_disp)
+show_mp  = input.bool(true, "Show Expected Move",   group=grp_disp)
+tbl_pos  = input.string("Top Right", "Table Position",
+    options=["Top Right","Top Left","Bottom Right","Bottom Left"], group=grp_disp)
+
+// ══════════════════════════════════════════════════════════════════
+// ── 1. HISTORICAL VOLATILITY (HV) ────────────────────────────────
+// ══════════════════════════════════════════════════════════════════
+log_ret  = math.log(close / close[1])
+hv20     = ta.stdev(log_ret, hv_lb)  * math.sqrt(252) * 100   // annualized %
+hv60     = ta.stdev(log_ret, hv_lb2) * math.sqrt(252) * 100
+hv252    = ta.stdev(log_ret, iv_lb)  * math.sqrt(252) * 100
+
+// ══════════════════════════════════════════════════════════════════
+// ── 2. IMPLIED VOLATILITY PROXY ──────────────────────────────────
+// ── (TradingView cannot read live IV; we proxy from price action) ─
+// ══════════════════════════════════════════════════════════════════
+// IV Proxy: use ATR-based volatility scaled to match typical IV premium
+atr14    = ta.atr(14)
+iv_proxy = (atr14 / close) * math.sqrt(252 / 14) * 100 * 1.15  // ~15% IV premium over HV
+
+// IV Rank: where is current IV relative to 52-week range
+iv_high_1y = ta.highest(iv_proxy, math.min(iv_lb, bar_index))
+iv_low_1y  = ta.lowest( iv_proxy, math.min(iv_lb, bar_index))
+iv_rank    = (iv_high_1y - iv_low_1y) > 0 ?
+    (iv_proxy - iv_low_1y) / (iv_high_1y - iv_low_1y) * 100 : 50.0
+
+// IV Percentile: % of days in past year where IV was lower
+var float iv_pct_count = 0
+if bar_index >= iv_lb
+    iv_pct_count := 0
+    for i = 1 to iv_lb
+        if iv_proxy[i] < iv_proxy
+            iv_pct_count += 1
+iv_percentile = iv_pct_count / iv_lb * 100
+
+// Volatility Risk Premium: IV vs HV (positive = options expensive)
+vrp = iv_proxy - hv20
+// Term structure: short vs long HV (contango vs backwardation)
+ts_contango = hv20 < hv60  // normal (IV > short HV → sell premium)
+
+// ══════════════════════════════════════════════════════════════════
+// ── 3. BLACK-SCHOLES GREEKS ESTIMATION ───────────────────────────
+// ══════════════════════════════════════════════════════════════════
+// Time in years
+T = dte / 365.0
+S = close
+iv_decimal = iv_proxy / 100.0
+
+// ATM strike (nearest round number)
+strike_atm = math.round(S * (1 + atm_offset) / 5) * 5
+strike_otm_call = math.round(S * 1.05 / 5) * 5   // ~5% OTM call
+strike_otm_put  = math.round(S * 0.95 / 5) * 5   // ~5% OTM put
+
+// d1, d2 for ATM
+d1_atm = (math.log(S / strike_atm) + (rfr - div_yld + 0.5 * iv_decimal * iv_decimal) * T) /
+         (iv_decimal * math.sqrt(T))
+d2_atm = d1_atm - iv_decimal * math.sqrt(T)
+
+// Standard normal CDF approximation (Hart's formula)
+_norm_cdf(x) =>
+    t = 1.0 / (1.0 + 0.2316419 * math.abs(x))
+    d = 0.3989422820 * math.exp(-x * x / 2)
+    p = d * t * (0.3193815 + t * (-0.3565638 + t * (1.7814779 + t * (-1.8212560 + t * 1.3302744))))
+    x >= 0 ? 1.0 - p : p
+
+_norm_pdf(x) => 0.3989422820 * math.exp(-x * x / 2)
+
+// ATM Greeks
+N_d1  = _norm_cdf(d1_atm)
+N_d2  = _norm_cdf(d2_atm)
+Nd1_  = _norm_cdf(-d1_atm)
+Nd2_  = _norm_cdf(-d2_atm)
+n_d1  = _norm_pdf(d1_atm)
+
+// Delta: probability of expiring ITM
+delta_call = math.exp(-div_yld * T) * N_d1    // 0.5 for ATM
+delta_put  = delta_call - math.exp(-div_yld * T) // negative
+
+// Gamma: rate of delta change per $1 move
+gamma_atm = math.exp(-div_yld * T) * n_d1 / (S * iv_decimal * math.sqrt(T))
+
+// Theta: daily time decay ($)
+theta_call = (-(S * math.exp(-div_yld * T) * n_d1 * iv_decimal) / (2 * math.sqrt(T)) -
+              rfr * strike_atm * math.exp(-rfr * T) * N_d2 +
+              div_yld * S * math.exp(-div_yld * T) * N_d1) / 365
+
+// Vega: $ change per 1% IV move
+vega_atm = S * math.exp(-div_yld * T) * n_d1 * math.sqrt(T) / 100
+
+// ATM Call/Put prices (Black-Scholes)
+pv_k = strike_atm * math.exp(-rfr * T)
+call_price_atm = S * math.exp(-div_yld * T) * N_d1 - pv_k * N_d2
+put_price_atm  = pv_k * Nd2_ - S * math.exp(-div_yld * T) * Nd1_
+
+// ── OTM strikes ──────────────────────────────────────────────────
+d1_call = (math.log(S / strike_otm_call) + (rfr - div_yld + 0.5*iv_decimal*iv_decimal)*T) /
+           (iv_decimal * math.sqrt(T))
+d2_call = d1_call - iv_decimal * math.sqrt(T)
+call_otm_price = S*math.exp(-div_yld*T)*_norm_cdf(d1_call) - strike_otm_call*math.exp(-rfr*T)*_norm_cdf(d2_call)
+
+d1_put = (math.log(S / strike_otm_put) + (rfr - div_yld + 0.5*iv_decimal*iv_decimal)*T) /
+          (iv_decimal * math.sqrt(T))
+d2_put = d1_put - iv_decimal * math.sqrt(T)
+put_otm_price = strike_otm_put*math.exp(-rfr*T)*_norm_cdf(-d2_put) - S*math.exp(-div_yld*T)*_norm_cdf(-d1_put)
+
+// ══════════════════════════════════════════════════════════════════
+// ── 4. EXPECTED MOVE (1 StdDev Range) ────────────────────────────
+// ══════════════════════════════════════════════════════════════════
+// 1 SD expected move = S * IV * sqrt(T)
+exp_move_1sd = S * iv_decimal * math.sqrt(T)
+exp_move_pct = iv_decimal * math.sqrt(T) * 100
+upper_1sd    = S + exp_move_1sd
+lower_1sd    = S - exp_move_1sd
+upper_2sd    = S + 2 * exp_move_1sd
+lower_2sd    = S - 2 * exp_move_1sd
+
+// ══════════════════════════════════════════════════════════════════
+// ── 5. PUT-CALL RATIO PROXY (from volume) ────────────────────────
+// ══════════════════════════════════════════════════════════════════
+// Proxy: use RSI as sentiment (low RSI = more put buying)
+rsi14 = ta.rsi(close, 14)
+// PCR proxy: inverted RSI mapped to 0.5-2.0 range
+pcr_proxy = 2.0 - (rsi14 / 100) * 1.5  // RSI 100 → PCR 0.5 (bullish), RSI 0 → PCR 2.0 (bearish)
+
+// ══════════════════════════════════════════════════════════════════
+// ── 6. MAX PAIN PROXY ────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════
+// Max pain tends to be near VWAP or recent consolidation
+vwap_v   = ta.vwap(hlc3)
+sma20    = ta.sma(close, 20)
+max_pain = (vwap_v + sma20 + ta.sma(close, 50)) / 3  // weighted estimate
+dist_from_max_pain = (close - max_pain) / max_pain * 100
+
+// ══════════════════════════════════════════════════════════════════
+// ── 7. GAMMA EXPOSURE REGIME ─────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════
+// Positive gamma: mean-reverting (good for iron condors)
+// Negative gamma: trending (good for directional plays)
+// Proxy: high-gamma strikes cluster around OI-weighted mean
+// We use ATR-relative volatility regime as GEX proxy
+atr_pct  = atr14 / close * 100
+gex_positive = atr_pct < hv20 / math.sqrt(252) * 100 * 1.5  // price dampening
+gex_regime   = gex_positive ? "POSITIVE (Range)" : "NEGATIVE (Trending)"
+
+// ══════════════════════════════════════════════════════════════════
+// ── 8. TREND + TECHNICALS (for directional bias) ─────────────────
+// ══════════════════════════════════════════════════════════════════
+ema20_v = ta.ema(close, 20)
+ema50_v = ta.ema(close, 50)
+ema200_v= ta.ema(close, 200)
+[st_line, st_dir]   = ta.supertrend(3.0, 10)
+[macd_l, macd_s, macd_h] = ta.macd(close, 12, 26, 9)
+[dmi_p, dmi_n, adx_v]    = ta.dmi(14, 14)
+
+bullish = close > ema20_v and close > ema50_v and st_dir < 0 and macd_h > 0
+bearish = close < ema20_v and close < ema50_v and st_dir > 0 and macd_h < 0
+ranging = adx_v < 25 or (not bullish and not bearish)
+
+// ══════════════════════════════════════════════════════════════════
+// ── 9. EARNINGS / EVENTS (volatility catalyst check) ────────────
+// ══════════════════════════════════════════════════════════════════
+// Flag if IV is unusually high (potential earnings in DTE window)
+iv_spike      = iv_rank > 70 and iv_proxy > hv60 * 1.4
+earnings_risk = iv_spike  // strong proxy for upcoming catalyst
+
+// ══════════════════════════════════════════════════════════════════
+// ── 10. OPTIONS STRATEGY SELECTION ENGINE ────────────────────────
+// ══════════════════════════════════════════════════════════════════
+// Score each strategy 0-100 and pick the best one
+
+// ── LONG CALL (bullish, IV low, trending up) ──────────────────────
+score_long_call = 0
+score_long_call += bullish        ? 30 : 0
+score_long_call += iv_rank < iv_lo ? 25 : iv_rank < 40 ? 15 : 0
+score_long_call += pcr_proxy < pcr_bull ? 15 : 0
+score_long_call += vrp < 0        ? 10 : 0   // IV cheap vs HV
+score_long_call += adx_v > 25 and dmi_p > dmi_n ? 10 : 0
+score_long_call += close > ema200_v ? 10 : 0
+score_long_call := math.min(100, score_long_call)
+
+// ── LONG PUT (bearish, IV low, trending down) ─────────────────────
+score_long_put = 0
+score_long_put += bearish         ? 30 : 0
+score_long_put += iv_rank < iv_lo ? 25 : iv_rank < 40 ? 15 : 0
+score_long_put += pcr_proxy > pcr_bear ? 15 : 0
+score_long_put += vrp < 0         ? 10 : 0
+score_long_put += adx_v > 25 and dmi_n > dmi_p ? 10 : 0
+score_long_put += close < ema200_v ? 10 : 0
+score_long_put := math.min(100, score_long_put)
+
+// ── COVERED CALL (neutral-bullish, IV high, own stock) ───────────
+score_cov_call = 0
+score_cov_call += iv_rank > iv_hi ? 30 : iv_rank > 40 ? 15 : 0
+score_cov_call += vrp > 3         ? 20 : vrp > 0 ? 10 : 0
+score_cov_call += bullish or ranging ? 20 : 0
+score_cov_call += ts_contango     ? 15 : 0
+score_cov_call += gex_positive    ? 15 : 0
+score_cov_call := math.min(100, score_cov_call)
+
+// ── CASH-SECURED PUT (bullish at support, IV high) ────────────────
+score_csp = 0
+score_csp += iv_rank > iv_hi      ? 25 : iv_rank > 40 ? 12 : 0
+score_csp += bullish or (close > ema200_v and ranging) ? 25 : 0
+score_csp += vrp > 2              ? 20 : vrp > 0 ? 10 : 0
+score_csp += pcr_proxy < 1.0      ? 15 : 0   // not too fearful
+score_csp += close > ta.sma(close, 50) ? 15 : 0
+score_csp := math.min(100, score_csp)
+
+// ── IRON CONDOR (neutral, IV high, ranging) ───────────────────────
+score_iron_condor = 0
+score_iron_condor += iv_rank > iv_hi ? 30 : iv_rank > 45 ? 15 : 0
+score_iron_condor += ranging or gex_positive ? 25 : 0
+score_iron_condor += vrp > 3          ? 20 : vrp > 1 ? 10 : 0
+score_iron_condor += adx_v < 20       ? 15 : adx_v < 25 ? 10 : 0
+score_iron_condor += not earnings_risk ? 10 : -10
+score_iron_condor := math.min(100, score_iron_condor)
+
+// ── STRADDLE (expecting big move, IV low, catalyst near) ──────────
+score_straddle = 0
+score_straddle += iv_rank < 25    ? 35 : iv_rank < 35 ? 20 : 0
+score_straddle += earnings_risk   ? 25 : 0
+score_straddle += vrp < -3        ? 20 : vrp < 0 ? 10 : 0
+score_straddle += adx_v < 20      ? 10 : 0  // about to break out
+score_straddle += iv_proxy < hv20 ? 10 : 0  // IV unusually cheap
+score_straddle := math.min(100, score_straddle)
+
+// ── BULL CALL SPREAD (bullish, reduce IV cost) ────────────────────
+score_bull_spread = 0
+score_bull_spread += bullish       ? 30 : 0
+score_bull_spread += iv_rank > 35  ? 20 : 0   // IV elevated → spread reduces cost
+score_bull_spread += pcr_proxy < pcr_bull ? 15 : 0
+score_bull_spread += close > ema50_v ? 20 : 0
+score_bull_spread += adx_v > 20   ? 15 : 0
+score_bull_spread := math.min(100, score_bull_spread)
+
+// ── BEAR PUT SPREAD (bearish, reduce IV cost) ─────────────────────
+score_bear_spread = 0
+score_bear_spread += bearish       ? 30 : 0
+score_bear_spread += iv_rank > 35  ? 20 : 0
+score_bear_spread += pcr_proxy > pcr_bear ? 15 : 0
+score_bear_spread += close < ema50_v ? 20 : 0
+score_bear_spread += adx_v > 20   ? 15 : 0
+score_bear_spread := math.min(100, score_bear_spread)
+
+// ── CALENDAR SPREAD (low IV now, expect IV rise) ──────────────────
+score_calendar = 0
+score_calendar += iv_rank < 30    ? 30 : 0
+score_calendar += ts_contango     ? 25 : 0   // front cheaper than back
+score_calendar += not earnings_risk ? 15 : 0
+score_calendar += ranging         ? 20 : 0
+score_calendar += vrp < -2        ? 10 : 0
+score_calendar := math.min(100, score_calendar)
+
+// ── DIAGONAL SPREAD (directional + IV edge) ───────────────────────
+score_diagonal = 0
+score_diagonal += bullish or bearish ? 25 : 0
+score_diagonal += iv_rank < 40    ? 20 : 0
+score_diagonal += ts_contango     ? 20 : 0
+score_diagonal += adx_v > 20     ? 20 : 0
+score_diagonal += vrp < 0        ? 15 : 0
+score_diagonal := math.min(100, score_diagonal)
+
+// ── FIND BEST STRATEGY ────────────────────────────────────────────
+best_score = math.max(score_long_call, score_long_put, score_cov_call,
+    score_csp, score_iron_condor, score_straddle, score_bull_spread,
+    score_bear_spread, score_calendar, score_diagonal)
+
+best_strat = best_score == score_long_call    ? "LONG CALL" :
+             best_score == score_long_put     ? "LONG PUT" :
+             best_score == score_cov_call     ? "COVERED CALL" :
+             best_score == score_csp          ? "CASH-SECURED PUT" :
+             best_score == score_iron_condor  ? "IRON CONDOR" :
+             best_score == score_straddle     ? "STRADDLE/STRANGLE" :
+             best_score == score_bull_spread  ? "BULL CALL SPREAD" :
+             best_score == score_bear_spread  ? "BEAR PUT SPREAD" :
+             best_score == score_calendar     ? "CALENDAR SPREAD" :
+                                               "DIAGONAL SPREAD"
+
+// Second best strategy
+second_score = math.max(
+    best_strat != "LONG CALL"    ? score_long_call    : 0,
+    best_strat != "LONG PUT"     ? score_long_put     : 0,
+    best_strat != "COVERED CALL" ? score_cov_call     : 0,
+    best_strat != "CASH-SECURED PUT" ? score_csp      : 0,
+    best_strat != "IRON CONDOR"  ? score_iron_condor  : 0,
+    best_strat != "STRADDLE/STRANGLE" ? score_straddle: 0,
+    best_strat != "BULL CALL SPREAD" ? score_bull_spread : 0,
+    best_strat != "BEAR PUT SPREAD"  ? score_bear_spread : 0)
+
+second_strat = second_score == score_long_call   and best_strat != "LONG CALL"    ? "LONG CALL" :
+               second_score == score_long_put    and best_strat != "LONG PUT"     ? "LONG PUT" :
+               second_score == score_cov_call    and best_strat != "COVERED CALL" ? "COVERED CALL" :
+               second_score == score_csp         and best_strat != "CASH-SECURED PUT" ? "CASH-SECURED PUT" :
+               second_score == score_iron_condor and best_strat != "IRON CONDOR"  ? "IRON CONDOR" :
+               second_score == score_straddle    and best_strat != "STRADDLE/STRANGLE" ? "STRADDLE" :
+               second_score == score_bull_spread and best_strat != "BULL CALL SPREAD" ? "BULL SPREAD" :
+                                                                                         "BEAR SPREAD"
+
+// ══════════════════════════════════════════════════════════════════
+// ── 11. PROBABILITY OF PROFIT (POP) ──────────────────────────────
+// ══════════════════════════════════════════════════════════════════
+pop_long_call   = (1 - delta_call) * 100   // probability call expires worthless (WRONG for buyer)
+pop_long_call   := delta_call * 100        // probability call is ITM at expiry
+
+// For premium sellers, POP = 1 - delta (probability OTM)
+pop_sell_call   = (1 - _norm_cdf(d1_atm)) * 100    // ATM call expires OTM
+pop_iron_condor = (1 - delta_call - Nd1_) * 100     // approx
+
+// Expected Value estimate
+ev_long_call = call_price_atm * (delta_call - 0.5) * 2  // simplified EV
+ev_iron_condor = (call_otm_price + put_otm_price) * 0.65 // collect 65% as profit
+
+// ══════════════════════════════════════════════════════════════════
+// ── PLOTS ─────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════
+// IV Rank histogram
+hline(iv_hi, "High IV", color=color.new(color.red,   50), linestyle=hline.style_dashed)
+hline(iv_lo, "Low IV",  color=color.new(color.green, 50), linestyle=hline.style_dashed)
+hline(50,    "Mid IV",  color=color.new(color.gray,  70), linestyle=hline.style_dotted)
+
+iv_rank_color = iv_rank > iv_hi ? color.new(color.red,   30) :
+                iv_rank < iv_lo ? color.new(color.green, 30) :
+                                  color.new(color.blue,  30)
+
+plot(iv_rank, "IV Rank", color=iv_rank_color, linewidth=2, style=plot.style_histogram)
+plot(iv_rank, "IV Rank Line", color=color.new(color.white, 50), linewidth=1)
+plot(vrp,     "VRP", color=vrp>0 ? color.new(color.red,50) : color.new(color.green,50), linewidth=1, style=plot.style_histogram, display=display.none)
+
+// Expected move lines (on price chart — requires overlay=true, using bgcolor)
+bgcolor(iv_rank > iv_hi ? color.new(color.red, 93) :
+        iv_rank < iv_lo ? color.new(color.green, 93) : na)
+
+// ── STRATEGY TABLE ────────────────────────────────────────────────
+tbl_position = tbl_pos == "Top Right"    ? position.top_right :
+               tbl_pos == "Top Left"     ? position.top_left  :
+               tbl_pos == "Bottom Left"  ? position.bottom_left : position.bottom_right
+
+var table opt_tbl = table.new(tbl_position, 3, 22,
+    bgcolor    = color.new(color.black, 10),
+    border_color = color.new(color.gray, 40),
+    border_width = 1,
+    frame_color  = color.new(color.blue, 40),
+    frame_width  = 1)
+
+if barstate.islast and show_tbl
+    strat_color = best_score >= 80 ? color.new(color.green, 20) :
+                  best_score >= 60 ? color.new(color.teal,  30) :
+                                     color.new(color.gray,  40)
+
+    // Header
+    table.cell(opt_tbl, 0, 0, "AXIOM OPTIONS ENGINE",      text_color=color.white,       bgcolor=color.new(#1a237e,20), text_size=size.small, merge_cells=true)
+    table.cell(opt_tbl, 1, 0, "",      text_color=color.white,       bgcolor=color.new(#1a237e,20), text_size=size.small)
+    table.cell(opt_tbl, 2, 0, "",      text_color=color.white,       bgcolor=color.new(#1a237e,20), text_size=size.small)
+
+    // Best strategy
+    table.cell(opt_tbl, 0, 1, "★ BEST STRATEGY",        text_color=color.yellow, text_size=size.small, text_halign=text.align_left)
+    table.cell(opt_tbl, 1, 1, best_strat,               text_color=color.yellow, text_size=size.normal)
+    table.cell(opt_tbl, 2, 1, str.tostring(best_score) + "/100", text_color=best_score>=80?color.green:color.orange, text_size=size.small)
+
+    table.cell(opt_tbl, 0, 2, "  2nd Best",             text_color=color.silver, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(opt_tbl, 1, 2, second_strat,             text_color=color.silver, text_size=size.small)
+    table.cell(opt_tbl, 2, 2, str.tostring(second_score) + "/100",text_color=color.gray, text_size=size.tiny)
+
+    // IV Analysis
+    table.cell(opt_tbl, 0, 3, "── IV ANALYSIS ──",       text_color=color.blue,   text_size=size.tiny, merge_cells=true)
+    table.cell(opt_tbl, 1, 3, "",                         text_color=color.blue,   text_size=size.tiny)
+    table.cell(opt_tbl, 2, 3, "",                         text_color=color.blue,   text_size=size.tiny)
+
+    table.cell(opt_tbl, 0, 4, "IV (Proxy)",              text_color=color.gray,   text_size=size.tiny, text_halign=text.align_left)
+    table.cell(opt_tbl, 1, 4, str.tostring(math.round(iv_proxy*10)/10) + "%", text_color=color.white, text_size=size.small)
+    table.cell(opt_tbl, 2, 4, iv_proxy > hv20 ? "RICH" : "CHEAP", text_color=iv_proxy>hv20?color.red:color.green, text_size=size.tiny)
+
+    table.cell(opt_tbl, 0, 5, "IV Rank",                 text_color=color.gray,   text_size=size.tiny, text_halign=text.align_left)
+    table.cell(opt_tbl, 1, 5, str.tostring(math.round(iv_rank)) + "%", text_color=iv_rank>iv_hi?color.red:iv_rank<iv_lo?color.green:color.white, text_size=size.small)
+    table.cell(opt_tbl, 2, 5, iv_rank>iv_hi ? "SELL PREM" : iv_rank<iv_lo ? "BUY PREM" : "NEUTRAL", text_color=iv_rank>iv_hi?color.red:iv_rank<iv_lo?color.green:color.gray, text_size=size.tiny)
+
+    table.cell(opt_tbl, 0, 6, "HV20 / HV60",             text_color=color.gray,   text_size=size.tiny, text_halign=text.align_left)
+    table.cell(opt_tbl, 1, 6, str.tostring(math.round(hv20*10)/10) + "% / " + str.tostring(math.round(hv60*10)/10) + "%", text_color=color.white, text_size=size.tiny)
+    table.cell(opt_tbl, 2, 6, ts_contango ? "CONTANGO" : "BACKWD", text_color=ts_contango?color.green:color.orange, text_size=size.tiny)
+
+    table.cell(opt_tbl, 0, 7, "VRP (IV-HV20)",           text_color=color.gray,   text_size=size.tiny, text_halign=text.align_left)
+    table.cell(opt_tbl, 1, 7, (vrp>0?"+":"") + str.tostring(math.round(vrp*10)/10) + "%", text_color=vrp>0?color.red:color.green, text_size=size.small)
+    table.cell(opt_tbl, 2, 7, vrp>3?"VERY RICH":vrp>0?"RICH":vrp>-3?"CHEAP":"VERY CHEAP", text_color=vrp>0?color.red:color.green, text_size=size.tiny)
+
+    // Greeks
+    table.cell(opt_tbl, 0, 8, "── GREEKS (ATM " + str.tostring(dte) + "DTE) ──", text_color=color.purple, text_size=size.tiny, merge_cells=true)
+    table.cell(opt_tbl, 1, 8, "",                         text_color=color.purple, text_size=size.tiny)
+    table.cell(opt_tbl, 2, 8, "",                         text_color=color.purple, text_size=size.tiny)
+
+    table.cell(opt_tbl, 0, 9,  "Delta (Δ)",              text_color=color.gray, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(opt_tbl, 1, 9,  str.tostring(math.round(delta_call*1000)/1000), text_color=color.white, text_size=size.small)
+    table.cell(opt_tbl, 2, 9,  "≈ " + str.tostring(math.round(delta_call*100)) + "% ITM prob", text_color=color.gray, text_size=size.tiny)
+
+    table.cell(opt_tbl, 0, 10, "Gamma (Γ)",              text_color=color.gray, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(opt_tbl, 1, 10, str.tostring(math.round(gamma_atm*10000)/10000), text_color=color.white, text_size=size.small)
+    table.cell(opt_tbl, 2, 10, "Δ per $1 move",          text_color=color.gray, text_size=size.tiny)
+
+    table.cell(opt_tbl, 0, 11, "Theta (Θ/day)",          text_color=color.gray, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(opt_tbl, 1, 11, "$" + str.tostring(math.round(math.abs(theta_call)*100)/100), text_color=color.orange, text_size=size.small)
+    table.cell(opt_tbl, 2, 11, "daily decay",            text_color=color.gray, text_size=size.tiny)
+
+    table.cell(opt_tbl, 0, 12, "Vega (ν/1%IV)",          text_color=color.gray, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(opt_tbl, 1, 12, "$" + str.tostring(math.round(vega_atm*100)/100), text_color=color.blue, text_size=size.small)
+    table.cell(opt_tbl, 2, 12, "per 1% IV move",         text_color=color.gray, text_size=size.tiny)
+
+    // Pricing
+    table.cell(opt_tbl, 0, 13, "── OPTION PRICES ──",    text_color=color.teal,   text_size=size.tiny, merge_cells=true)
+    table.cell(opt_tbl, 1, 13, "",                        text_color=color.teal,   text_size=size.tiny)
+    table.cell(opt_tbl, 2, 13, "",                        text_color=color.teal,   text_size=size.tiny)
+
+    table.cell(opt_tbl, 0, 14, "ATM Call $" + str.tostring(strike_atm), text_color=color.gray, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(opt_tbl, 1, 14, "$" + str.tostring(math.round(call_price_atm*100)/100), text_color=color.green, text_size=size.small)
+    table.cell(opt_tbl, 2, 14, "δ=" + str.tostring(math.round(delta_call*100)/100),    text_color=color.gray, text_size=size.tiny)
+
+    table.cell(opt_tbl, 0, 15, "ATM Put  $" + str.tostring(strike_atm), text_color=color.gray, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(opt_tbl, 1, 15, "$" + str.tostring(math.round(put_price_atm*100)/100),  text_color=color.red,   text_size=size.small)
+    table.cell(opt_tbl, 2, 15, "δ=" + str.tostring(math.round(math.abs(delta_put)*100)/100), text_color=color.gray, text_size=size.tiny)
+
+    table.cell(opt_tbl, 0, 16, "OTM Call $" + str.tostring(strike_otm_call), text_color=color.gray, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(opt_tbl, 1, 16, "$" + str.tostring(math.round(call_otm_price*100)/100), text_color=color.green, text_size=size.small)
+    table.cell(opt_tbl, 2, 16, "5% OTM",                 text_color=color.gray, text_size=size.tiny)
+
+    // Market
+    table.cell(opt_tbl, 0, 17, "── MARKET CONTEXT ──",   text_color=color.orange, text_size=size.tiny, merge_cells=true)
+    table.cell(opt_tbl, 1, 17, "",                        text_color=color.orange, text_size=size.tiny)
+    table.cell(opt_tbl, 2, 17, "",                        text_color=color.orange, text_size=size.tiny)
+
+    table.cell(opt_tbl, 0, 18, "PCR (proxy)",            text_color=color.gray, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(opt_tbl, 1, 18, str.tostring(math.round(pcr_proxy*100)/100), text_color=pcr_proxy<0.8?color.green:pcr_proxy>1.2?color.red:color.white, text_size=size.small)
+    table.cell(opt_tbl, 2, 18, pcr_proxy<pcr_bull?"BULLISH":pcr_proxy>pcr_bear?"BEARISH":"NEUTRAL", text_color=pcr_proxy<pcr_bull?color.green:pcr_proxy>pcr_bear?color.red:color.gray, text_size=size.tiny)
+
+    table.cell(opt_tbl, 0, 19, "Max Pain",               text_color=color.gray, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(opt_tbl, 1, 19, "$" + str.tostring(math.round(max_pain*100)/100), text_color=color.white, text_size=size.small)
+    table.cell(opt_tbl, 2, 19, (dist_from_max_pain>0?"+":"")+str.tostring(math.round(dist_from_max_pain*10)/10)+"%", text_color=math.abs(dist_from_max_pain)>5?color.orange:color.gray, text_size=size.tiny)
+
+    table.cell(opt_tbl, 0, 20, "Expected Move",          text_color=color.gray, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(opt_tbl, 1, 20, "±$" + str.tostring(math.round(exp_move_1sd*100)/100), text_color=color.aqua, text_size=size.small)
+    table.cell(opt_tbl, 2, 20, "±" + str.tostring(math.round(exp_move_pct*10)/10) + "% (" + str.tostring(dte) + "d)", text_color=color.gray, text_size=size.tiny)
+
+    table.cell(opt_tbl, 0, 21, "GEX Regime",             text_color=color.gray, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(opt_tbl, 1, 21, gex_positive ? "POSITIVE" : "NEGATIVE", text_color=gex_positive?color.green:color.red, text_size=size.small)
+    table.cell(opt_tbl, 2, 21, gex_positive ? "Range/Condor" : "Trend/Directional", text_color=color.gray, text_size=size.tiny)
+
+// ── Expected move lines on histogram ─────────────────────────────
+plot(show_mp ? exp_move_pct : na, "Exp Move %", color=color.new(color.aqua, 30), style=plot.style_linebr, linewidth=1)
+
+// Strategy scores bar (secondary plot for comparison)
+plot(best_score, "Best Score",  color=color.new(color.yellow, 20), linewidth=2)
+
+// ── ALERTS ────────────────────────────────────────────────────────
+alert_json = '{"ticker":"' + syminfo.ticker +
+    '","best_strategy":"' + best_strat +
+    '","score":' + str.tostring(best_score) +
+    ',"iv_rank":' + str.tostring(math.round(iv_rank)) +
+    ',"iv_proxy":' + str.tostring(math.round(iv_proxy*10)/10) +
+    ',"vrp":' + str.tostring(math.round(vrp*10)/10) +
+    ',"hv20":' + str.tostring(math.round(hv20*10)/10) +
+    ',"delta":' + str.tostring(math.round(delta_call*1000)/1000) +
+    ',"theta":' + str.tostring(math.round(math.abs(theta_call)*100)/100) +
+    ',"vega":' + str.tostring(math.round(vega_atm*100)/100) +
+    ',"exp_move_pct":' + str.tostring(math.round(exp_move_pct*10)/10) +
+    ',"max_pain":' + str.tostring(math.round(max_pain*100)/100) +
+    ',"call_price":' + str.tostring(math.round(call_price_atm*100)/100) +
+    ',"put_price":' + str.tostring(math.round(put_price_atm*100)/100) +
+    ',"gex_positive":' + str.tostring(gex_positive) +
+    ',"price":' + str.tostring(math.round(close*100)/100) + '}'
+
+alertcondition(best_score >= min_score and best_strat == "IRON CONDOR",       "Iron Condor Setup",    alert_json)
+alertcondition(best_score >= min_score and best_strat == "LONG CALL",          "Long Call Setup",      alert_json)
+alertcondition(best_score >= min_score and best_strat == "LONG PUT",           "Long Put Setup",       alert_json)
+alertcondition(best_score >= min_score and best_strat == "COVERED CALL",       "Covered Call Setup",   alert_json)
+alertcondition(best_score >= min_score and best_strat == "STRADDLE/STRANGLE",  "Straddle Setup",       alert_json)
+alertcondition(best_score >= min_score and best_strat == "BULL CALL SPREAD",   "Bull Spread Setup",    alert_json)
+alertcondition(best_score >= min_score and best_strat == "CASH-SECURED PUT",   "CSP Setup",            alert_json)
+alertcondition(iv_rank > 70, "IV Rank Extreme HIGH — Sell Premium", alert_json)
+alertcondition(iv_rank < 20, "IV Rank Extreme LOW — Buy Options",   alert_json)

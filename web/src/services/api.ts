@@ -63,6 +63,13 @@ export const api = {
     create: (d: any)      => apiClient.post('/api/v1/alerts', d),
     delete: (id: string)  => apiClient.delete(`/api/v1/alerts/${id}`),
   },
+  scripts: {
+    getAll: (category?: string)    => apiClient.get('/api/v1/scripts', { params: category ? { category } : {} }),
+    getById: (id: string)          => apiClient.get(`/api/v1/scripts/${id}`),
+    create: (d: any)               => apiClient.post('/api/v1/scripts', d),
+    update: (id: string, d: any)   => apiClient.put(`/api/v1/scripts/${id}`, d),
+    delete: (id: string)           => apiClient.delete(`/api/v1/scripts/${id}`),
+  },
   admin: {
     listUsers:   ()           => apiClient.get('/api/v1/admin/users'),
     approveUser: (id: string) => apiClient.put(`/api/v1/admin/users/${id}/approve`),

@@ -21,7 +21,7 @@ spring:
         - id: user-service-users
           uri: http://localhost:8081
           predicates:
-            - Path=/api/v1/users/**,/api/v1/watchlists/**
+            - Path=/api/v1/users/**,/api/v1/watchlists/**,/api/v1/scripts/**
           filters:
             - AddRequestHeader=X-Gateway, axiom
 

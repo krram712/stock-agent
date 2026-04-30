@@ -30,6 +30,13 @@ spring:
           filters:
             - AddRequestHeader=X-Gateway,axiom
 
+        - id: user-service-scripts
+          uri: ${USER_SERVICE_URL:http://user-service:8081}
+          predicates:
+            - Path=/api/v1/scripts/**
+          filters:
+            - AddRequestHeader=X-Gateway,axiom
+
         - id: stock-data-service
           uri: ${STOCK_DATA_SERVICE_URL:http://stock-data-service:8082}
           predicates:
