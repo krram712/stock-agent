@@ -86,7 +86,7 @@ public class AnalysisService {
             .signalStrength(signalStrength)
             .customAnalysis(req.getCustomPrompt())
             .createdAt(Instant.now())
-            .expiresAt(Instant.now().plus(Duration.ofMinutes(cacheTtlMinutes)))
+            .expiresAt(Instant.now().plus(Duration.ofDays(7)))
             .build();
 
         analysis = analysisRepository.save(analysis);
