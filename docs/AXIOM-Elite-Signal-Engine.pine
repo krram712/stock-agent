@@ -1,0 +1,373 @@
+//@version=5
+// ══════════════════════════════════════════════════════════════════
+// AXIOM Elite Signal Engine v3.0
+// Research base: Elder Triple Screen, Minervini SEPA, Bollinger Squeeze,
+// Weinstein Stage Analysis, Smart Money Concepts, CMF, OBV Divergence
+// ══════════════════════════════════════════════════════════════════
+indicator("AXIOM Elite Signal Engine v3.0", overlay=true, max_bars_back=500)
+
+// ══════════════════════════════════════════════════════════════════
+// INPUTS
+// ══════════════════════════════════════════════════════════════════
+i_ema8        = input.int(8,    "EMA Fast (8)",         group="Trend")
+i_ema21       = input.int(21,   "EMA Mid (21)",         group="Trend")
+i_ema50       = input.int(50,   "EMA Slow (50)",        group="Trend")
+i_ema200      = input.int(200,  "EMA Trend (200)",      group="Trend")
+i_rsi_len     = input.int(14,   "RSI Length",           group="Momentum")
+i_macd_fast   = input.int(12,   "MACD Fast",            group="Momentum")
+i_macd_slow   = input.int(26,   "MACD Slow",            group="Momentum")
+i_macd_sig    = input.int(9,    "MACD Signal",          group="Momentum")
+i_adx_len     = input.int(14,   "ADX Length",           group="Momentum")
+i_stoch_k     = input.int(14,   "Stoch K",              group="Momentum")
+i_stoch_s     = input.int(3,    "Stoch Smooth",         group="Momentum")
+i_stoch_d     = input.int(3,    "Stoch D",              group="Momentum")
+i_vol_len     = input.int(20,   "Volume MA Length",     group="Volume")
+i_rvol_min    = input.float(1.3,"Min RVOL for signals", group="Volume", step=0.1)
+i_mkt_filter  = input.bool(true, "Market Regime Filter (MTF trend)", group="Filters")
+i_time_filter = input.bool(true, "Time Filter (skip open/close noise)", group="Filters")
+i_bull_thresh = input.int(70,   "Bull Signal Threshold",group="Filters", minval=55, maxval=95)
+i_bear_thresh = input.int(70,   "Bear Signal Threshold",group="Filters", minval=55, maxval=95)
+i_show_labels = input.bool(true, "Show Signal Labels",  group="Display")
+i_show_table  = input.bool(true, "Show Score Table",    group="Display")
+i_webhook_url = input.string("https://stockagentify.com/webhook", "Webhook URL", group="Alerts")
+
+// ══════════════════════════════════════════════════════════════════
+// LAYER 1 — TREND (Max 25 pts)
+// Elder: primary trend is king. Minervini: only buy Stage 2 uptrends.
+// ══════════════════════════════════════════════════════════════════
+ema8_v   = ta.ema(close, i_ema8)
+ema21_v  = ta.ema(close, i_ema21)
+ema50_v  = ta.ema(close, i_ema50)
+ema200_v = ta.ema(close, i_ema200)
+vwap_v   = ta.vwap(hlc3)
+
+// Supertrend (ATR-based adaptive trend line)
+[st_line, st_dir] = ta.supertrend(3.0, 10)
+st_bull = st_dir < 0
+
+// Weinstein Stage 2: price > 200 EMA, 200 EMA rising
+stage2_bull = close > ema200_v and ema200_v > ema200_v[10]
+stage4_bear = close < ema200_v and ema200_v < ema200_v[10]
+
+trend_bull = 0
+trend_bull += close > ema8_v    ? 3 : 0
+trend_bull += close > ema21_v   ? 3 : 0
+trend_bull += close > ema50_v   ? 4 : 0
+trend_bull += close > ema200_v  ? 5 : 0
+trend_bull += ema8_v > ema21_v  ? 2 : 0
+trend_bull += ema21_v > ema50_v ? 2 : 0
+trend_bull += ema50_v > ema200_v ? 2 : 0
+trend_bull += st_bull           ? 2 : 0
+trend_bull += stage2_bull       ? 2 : 0
+
+trend_bear = 0
+trend_bear += close < ema8_v    ? 3 : 0
+trend_bear += close < ema21_v   ? 3 : 0
+trend_bear += close < ema50_v   ? 4 : 0
+trend_bear += close < ema200_v  ? 5 : 0
+trend_bear += ema8_v < ema21_v  ? 2 : 0
+trend_bear += ema21_v < ema50_v ? 2 : 0
+trend_bear += ema50_v < ema200_v ? 2 : 0
+trend_bear += not st_bull       ? 2 : 0
+trend_bear += stage4_bear       ? 2 : 0
+
+// ══════════════════════════════════════════════════════════════════
+// LAYER 2 — MOMENTUM (Max 25 pts)
+// Elder: oscillators confirm trend. RSI divergence = early reversal warning.
+// ══════════════════════════════════════════════════════════════════
+rsi_v          = ta.rsi(close, i_rsi_len)
+rsi_bull_zone  = rsi_v > 50 and rsi_v < 75
+rsi_os         = rsi_v < 30
+rsi_ob         = rsi_v > 75
+rsi_bull_div   = low < low[5] and rsi_v > rsi_v[5] and rsi_v < 50
+rsi_bear_div   = high > high[5] and rsi_v < rsi_v[5] and rsi_v > 50
+
+[macd_l, macd_s, macd_h] = ta.macd(close, i_macd_fast, i_macd_slow, i_macd_sig)
+macd_bull      = macd_l > macd_s
+macd_rising    = macd_h > macd_h[1]
+macd_xbull     = ta.crossover(macd_l, macd_s)
+macd_xbear     = ta.crossunder(macd_l, macd_s)
+
+stoch_k_raw = ta.stoch(close, high, low, i_stoch_k)
+stoch_k_v   = ta.sma(stoch_k_raw, i_stoch_s)
+stoch_d_v   = ta.sma(stoch_k_v, i_stoch_d)
+stoch_bull  = stoch_k_v > stoch_d_v and stoch_k_v < 80
+stoch_os    = stoch_k_v < 25 and stoch_d_v < 25
+stoch_ob    = stoch_k_v > 75 and stoch_d_v > 75
+stoch_xbull = ta.crossover(stoch_k_v, stoch_d_v)
+stoch_xbear = ta.crossunder(stoch_k_v, stoch_d_v)
+
+[adx_v, dip, dim] = ta.dmi(i_adx_len, i_adx_len)
+trending      = adx_v > 25
+strong_trend  = adx_v > 40
+bull_di       = dip > dim
+bear_di       = dim > dip
+
+mom_bull = 0
+mom_bull += rsi_bull_zone  ? 5 : 0
+mom_bull += rsi_os         ? 3 : 0
+mom_bull += rsi_bull_div   ? 4 : 0
+mom_bull += macd_bull      ? 3 : 0
+mom_bull += macd_rising    ? 2 : 0
+mom_bull += stoch_bull     ? 3 : 0
+mom_bull += stoch_os       ? 3 : 0
+mom_bull += bull_di        ? 2 : 0
+
+mom_bear = 0
+mom_bear += rsi_v < 50 and rsi_v > 25 ? 5 : 0
+mom_bear += rsi_ob                     ? 3 : 0
+mom_bear += rsi_bear_div               ? 4 : 0
+mom_bear += not macd_bull              ? 3 : 0
+mom_bear += not macd_rising            ? 2 : 0
+mom_bear += stoch_ob                   ? 3 : 0
+mom_bear += stoch_xbear                ? 3 : 0
+mom_bear += bear_di                    ? 2 : 0
+
+// ══════════════════════════════════════════════════════════════════
+// LAYER 3 — VOLUME (Max 20 pts)
+// Institutions leave footprints in volume. No volume = no conviction.
+// ══════════════════════════════════════════════════════════════════
+vol_ma  = ta.sma(volume, i_vol_len)
+rvol    = volume / math.max(vol_ma, 1)
+high_vol = rvol >= i_rvol_min
+huge_vol = rvol >= 2.5
+
+obv_v    = ta.obv
+obv_ema  = ta.ema(obv_v, 20)
+obv_bull = obv_v > obv_ema and obv_v > obv_v[5]
+
+mf_mult = (high == low) ? 0.0 : ((close - low) - (high - close)) / (high - low)
+mf_vol  = mf_mult * volume
+cmf_v   = ta.sma(mf_vol, 20) / math.max(ta.sma(volume, 20), 1)
+cmf_bull = cmf_v > 0.05
+cmf_bear = cmf_v < -0.05
+
+vol_bull = 0
+vol_bull += high_vol        ? 6 : 0
+vol_bull += obv_bull        ? 5 : 0
+vol_bull += cmf_bull        ? 5 : 0
+vol_bull += huge_vol        ? 4 : 0
+
+vol_bear = 0
+vol_bear += high_vol        ? 4 : 0
+vol_bear += not obv_bull    ? 5 : 0
+vol_bear += cmf_bear        ? 5 : 0
+vol_bear += huge_vol and close < open ? 6 : 0
+
+// ══════════════════════════════════════════════════════════════════
+// LAYER 4 — STRUCTURE & PATTERN (Max 20 pts)
+// Bollinger Squeeze (Carr/Bollinger), Minervini tight pattern,
+// market structure (Higher Highs / Lower Lows)
+// ══════════════════════════════════════════════════════════════════
+atr_v = ta.atr(14)
+
+bb_basis  = ta.sma(close, 20)
+bb_dev    = ta.stdev(close, 20)
+bb_upper  = bb_basis + 2.0 * bb_dev
+bb_lower  = bb_basis - 2.0 * bb_dev
+bb_width  = (bb_upper - bb_lower) / math.max(bb_basis, 1)
+bb_w_avg  = ta.sma(bb_width, 20)
+bb_squeeze = bb_width < bb_w_avg * 0.75
+
+kc_mid   = ta.ema(close, 20)
+kc_range = ta.atr(10)
+kc_upper = kc_mid + 1.5 * kc_range
+kc_lower = kc_mid - 1.5 * kc_range
+true_squeeze = bb_upper < kc_upper and bb_lower > kc_lower
+
+// Minervini tight pattern: range < 10% over 10 bars
+hi10  = ta.highest(high, 10)
+lo10  = ta.lowest(low, 10)
+tight = (hi10 - lo10) / math.max(lo10, 1) < 0.10
+
+// Market structure
+hh = high > ta.highest(high[1], 10)
+hl = low  > ta.lowest(low[1], 10)
+ll = low  < ta.lowest(low[1], 10)
+lh = high < ta.highest(high[1], 10)
+
+// Pivot support proximity
+ph = ta.pivothigh(high, 5, 5)
+pl = ta.pivotlow(low, 5, 5)
+near_sup = not na(pl) ? (close - pl) < 1.5 * atr_v : false
+near_res = not na(ph) ? (ph - close) < 1.5 * atr_v : false
+
+struct_bull = 0
+struct_bull += hh or hl     ? 4 : 0
+struct_bull += near_sup     ? 4 : 0
+struct_bull += true_squeeze ? 4 : 0
+struct_bull += tight        ? 4 : 0
+struct_bull += close > vwap_v ? 4 : 0
+
+struct_bear = 0
+struct_bear += ll or lh         ? 4 : 0
+struct_bear += near_res         ? 4 : 0
+struct_bear += true_squeeze     ? 2 : 0
+struct_bear += close < vwap_v   ? 4 : 0
+struct_bear += close < bb_lower ? 6 : 0
+
+// ══════════════════════════════════════════════════════════════════
+// LAYER 5 — SMART MONEY (Max 10 pts)
+// ADX trend strength, momentum crosses, squeeze fire direction
+// ══════════════════════════════════════════════════════════════════
+squeeze_fire_bull = true_squeeze[1] and not true_squeeze and close > bb_upper[1]
+squeeze_fire_bear = true_squeeze[1] and not true_squeeze and close < bb_lower[1]
+
+smart_bull = 0
+smart_bull += strong_trend and bull_di  ? 5 : (trending and bull_di ? 3 : 0)
+smart_bull += macd_xbull               ? 3 : 0
+smart_bull += squeeze_fire_bull        ? 2 : 0
+
+smart_bear = 0
+smart_bear += strong_trend and bear_di  ? 5 : (trending and bear_di ? 3 : 0)
+smart_bear += macd_xbear               ? 3 : 0
+smart_bear += squeeze_fire_bear        ? 2 : 0
+
+// ══════════════════════════════════════════════════════════════════
+// TOTAL SCORE (0–100)
+// ══════════════════════════════════════════════════════════════════
+bull_raw = trend_bull + mom_bull + vol_bull + struct_bull + smart_bull
+bear_raw = trend_bear + mom_bear + vol_bear + struct_bear + smart_bear
+
+bull_score = math.min(100, bull_raw)
+bear_score = math.min(100, bear_raw)
+
+// ══════════════════════════════════════════════════════════════════
+// MARKET REGIME FILTER (Elder Triple Screen — weekly trend gate)
+// Only go long when weekly trend is up; short when weekly trend is down.
+// ══════════════════════════════════════════════════════════════════
+w_close   = request.security(syminfo.tickerid, "W", close, lookahead=barmerge.lookahead_off)
+w_ema40   = request.security(syminfo.tickerid, "W", ta.ema(close, 40), lookahead=barmerge.lookahead_off)
+d_close   = request.security(syminfo.tickerid, "D", close, lookahead=barmerge.lookahead_off)
+d_ema50   = request.security(syminfo.tickerid, "D", ta.ema(close, 50), lookahead=barmerge.lookahead_off)
+d_ema200  = request.security(syminfo.tickerid, "D", ta.ema(close, 200), lookahead=barmerge.lookahead_off)
+
+regime_bull = i_mkt_filter ? (w_close > w_ema40 and d_close > d_ema50 and d_ema50 > d_ema200) : true
+regime_bear = i_mkt_filter ? (w_close < w_ema40 and d_close < d_ema50) : true
+
+// ══════════════════════════════════════════════════════════════════
+// TIME FILTER — skip first 30 min and last 30 min (intraday noise)
+// ══════════════════════════════════════════════════════════════════
+ny_open  = timestamp("America/New_York", year, month, dayofmonth, 9, 30)
+ny_close = timestamp("America/New_York", year, month, dayofmonth, 16, 0)
+mins_in  = (time - ny_open)  / 60000
+mins_out = (ny_close - time) / 60000
+time_ok  = i_time_filter ? (mins_in > 30 and mins_out > 30) : true
+
+// ══════════════════════════════════════════════════════════════════
+// SIGNAL FIRE — all gates must pass
+// ══════════════════════════════════════════════════════════════════
+raw_bull = bull_score >= i_bull_thresh and high_vol and time_ok and regime_bull
+raw_bear = bear_score >= i_bear_thresh and high_vol and time_ok and regime_bear
+
+// Prevent back-to-back same signals
+var int last_sig = 0
+bull_fire = raw_bull and last_sig != 1
+bear_fire = raw_bear and last_sig != -1
+if bull_fire
+    last_sig := 1
+if bear_fire
+    last_sig := -1
+
+// ══════════════════════════════════════════════════════════════════
+// DYNAMIC ATR STOPS & TARGETS (risk-first sizing)
+// ══════════════════════════════════════════════════════════════════
+sl_bull  = close - 2.0 * atr_v
+t1_bull  = close + 2.0 * atr_v
+t2_bull  = close + 3.5 * atr_v
+t3_bull  = close + 5.0 * atr_v
+
+sl_bear  = close + 2.0 * atr_v
+t1_bear  = close - 2.0 * atr_v
+t2_bear  = close - 3.5 * atr_v
+t3_bear  = close - 5.0 * atr_v
+
+// ══════════════════════════════════════════════════════════════════
+// PLOTS
+// ══════════════════════════════════════════════════════════════════
+plot(ema8_v,   "EMA 8",   color=color.new(color.yellow, 55), linewidth=1)
+plot(ema21_v,  "EMA 21",  color=color.new(color.orange, 45), linewidth=1)
+plot(ema50_v,  "EMA 50",  color=color.new(color.blue,   35), linewidth=2)
+plot(ema200_v, "EMA 200", color=color.new(color.red,    25), linewidth=2)
+plot(vwap_v,   "VWAP",    color=color.new(color.purple, 40), linewidth=1)
+
+st_col = st_bull ? color.new(color.green, 65) : color.new(color.red, 65)
+plot(st_line, "Supertrend", color=st_col, linewidth=2)
+
+p_bbu = plot(bb_upper, "BB Upper", color=color.new(color.gray, 78))
+p_bbl = plot(bb_lower, "BB Lower", color=color.new(color.gray, 78))
+fill(p_bbu, p_bbl, color=true_squeeze ? color.new(color.yellow, 90) : color.new(color.gray, 97))
+
+bgcolor(true_squeeze ? color.new(color.yellow, 93) : na, title="Squeeze Zone")
+
+// ══════════════════════════════════════════════════════════════════
+// SIGNAL LABELS
+// ══════════════════════════════════════════════════════════════════
+pat_bull = squeeze_fire_bull ? "SQUEEZE BREAKOUT" : near_sup ? "SUPPORT BOUNCE" : tight ? "TIGHT BASE" : "TREND CONT."
+pat_bear = squeeze_fire_bear ? "SQUEEZE BREAKDOWN" : ll ? "STRUCTURE BREAK" : near_res ? "RESISTANCE REJ." : "TREND CONT."
+
+if i_show_labels and bull_fire
+    label.new(bar_index, low - atr_v * 0.6, "▲ BUY  " + str.tostring(bull_score) + "/100\n" + pat_bull + "\nSL  " + str.tostring(math.round(sl_bull, 2)) + "\nT1  " + str.tostring(math.round(t1_bull, 2)) + "\nT2  " + str.tostring(math.round(t2_bull, 2)) + "\nT3  " + str.tostring(math.round(t3_bull, 2)), style=label.style_label_up, color=color.new(color.green, 5), textcolor=color.white, size=size.small)
+
+if i_show_labels and bear_fire
+    label.new(bar_index, high + atr_v * 0.6, "▼ SELL  " + str.tostring(bear_score) + "/100\n" + pat_bear + "\nSL  " + str.tostring(math.round(sl_bear, 2)) + "\nT1  " + str.tostring(math.round(t1_bear, 2)) + "\nT2  " + str.tostring(math.round(t2_bear, 2)) + "\nT3  " + str.tostring(math.round(t3_bear, 2)), style=label.style_label_down, color=color.new(color.red, 5), textcolor=color.white, size=size.small)
+
+// ══════════════════════════════════════════════════════════════════
+// SCORE TABLE (top-right dashboard)
+// ══════════════════════════════════════════════════════════════════
+var table t = table.new(position.top_right, 3, 10, border_width=1, border_color=color.new(color.gray, 60))
+
+if i_show_table and barstate.islast
+    // Header
+    table.cell(t, 0, 0, "LAYER",     text_color=color.white, bgcolor=color.new(color.gray, 20), text_size=size.tiny)
+    table.cell(t, 1, 0, "BULL",      text_color=color.white, bgcolor=color.new(color.gray, 20), text_size=size.tiny)
+    table.cell(t, 2, 0, "BEAR",      text_color=color.white, bgcolor=color.new(color.gray, 20), text_size=size.tiny)
+    // Rows
+    table.cell(t, 0, 1, "Trend /25",     text_color=color.silver, bgcolor=color.new(color.navy, 55), text_size=size.tiny)
+    table.cell(t, 1, 1, str.tostring(trend_bull), text_color=color.lime,  bgcolor=color.new(color.navy, 55), text_size=size.tiny)
+    table.cell(t, 2, 1, str.tostring(trend_bear), text_color=color.red,   bgcolor=color.new(color.navy, 55), text_size=size.tiny)
+    table.cell(t, 0, 2, "Momentum /25",  text_color=color.silver, bgcolor=color.new(color.navy, 65), text_size=size.tiny)
+    table.cell(t, 1, 2, str.tostring(mom_bull),   text_color=color.lime,  bgcolor=color.new(color.navy, 65), text_size=size.tiny)
+    table.cell(t, 2, 2, str.tostring(mom_bear),   text_color=color.red,   bgcolor=color.new(color.navy, 65), text_size=size.tiny)
+    table.cell(t, 0, 3, "Volume /20",    text_color=color.silver, bgcolor=color.new(color.navy, 55), text_size=size.tiny)
+    table.cell(t, 1, 3, str.tostring(vol_bull),   text_color=color.lime,  bgcolor=color.new(color.navy, 55), text_size=size.tiny)
+    table.cell(t, 2, 3, str.tostring(vol_bear),   text_color=color.red,   bgcolor=color.new(color.navy, 55), text_size=size.tiny)
+    table.cell(t, 0, 4, "Structure /20", text_color=color.silver, bgcolor=color.new(color.navy, 65), text_size=size.tiny)
+    table.cell(t, 1, 4, str.tostring(struct_bull), text_color=color.lime, bgcolor=color.new(color.navy, 65), text_size=size.tiny)
+    table.cell(t, 2, 4, str.tostring(struct_bear), text_color=color.red,  bgcolor=color.new(color.navy, 65), text_size=size.tiny)
+    table.cell(t, 0, 5, "Smart $ /10",   text_color=color.silver, bgcolor=color.new(color.navy, 55), text_size=size.tiny)
+    table.cell(t, 1, 5, str.tostring(smart_bull), text_color=color.lime,  bgcolor=color.new(color.navy, 55), text_size=size.tiny)
+    table.cell(t, 2, 5, str.tostring(smart_bear), text_color=color.red,   bgcolor=color.new(color.navy, 55), text_size=size.tiny)
+    // Total
+    b_bg = bull_score >= i_bull_thresh ? color.new(color.green, 15) : color.new(color.gray, 40)
+    r_bg = bear_score >= i_bear_thresh ? color.new(color.red,   15) : color.new(color.gray, 40)
+    table.cell(t, 0, 6, "TOTAL /100",    text_color=color.white, bgcolor=color.new(color.gray, 15), text_size=size.tiny)
+    table.cell(t, 1, 6, str.tostring(bull_score), text_color=color.white, bgcolor=b_bg, text_size=size.tiny)
+    table.cell(t, 2, 6, str.tostring(bear_score), text_color=color.white, bgcolor=r_bg, text_size=size.tiny)
+    // Regime
+    reg_bg = regime_bull ? color.new(color.green, 30) : color.new(color.red, 30)
+    table.cell(t, 0, 7, "Regime",         text_color=color.white, bgcolor=reg_bg, text_size=size.tiny)
+    table.cell(t, 1, 7, regime_bull ? "BULL ✓" : "BEAR", text_color=color.white, bgcolor=reg_bg, text_size=size.tiny)
+    table.cell(t, 2, 7, "ADX " + str.tostring(math.round(adx_v, 0)), text_color=adx_v > 25 ? color.lime : color.gray, bgcolor=color.new(color.navy, 55), text_size=size.tiny)
+    // RVOL + Squeeze
+    rv_bg = rvol >= i_rvol_min ? color.new(color.teal, 30) : color.new(color.gray, 50)
+    table.cell(t, 0, 8, "RVOL",           text_color=color.white, bgcolor=rv_bg, text_size=size.tiny)
+    table.cell(t, 1, 8, str.tostring(math.round(rvol, 1)) + "x", text_color=color.white, bgcolor=rv_bg, text_size=size.tiny)
+    table.cell(t, 2, 8, "RSI " + str.tostring(math.round(rsi_v, 0)), text_color=rsi_bull_zone ? color.lime : rsi_ob ? color.red : color.gray, bgcolor=color.new(color.navy, 55), text_size=size.tiny)
+    sq_bg = true_squeeze ? color.new(color.yellow, 20) : color.new(color.gray, 55)
+    table.cell(t, 0, 9, "Squeeze",        text_color=color.white, bgcolor=sq_bg, text_size=size.tiny)
+    table.cell(t, 1, 9, true_squeeze ? "COILING 🔥" : "—", text_color=color.yellow, bgcolor=sq_bg, text_size=size.tiny)
+    table.cell(t, 2, 9, "CMF " + str.tostring(math.round(cmf_v, 2)), text_color=cmf_bull ? color.lime : cmf_bear ? color.red : color.gray, bgcolor=color.new(color.navy, 55), text_size=size.tiny)
+
+// ══════════════════════════════════════════════════════════════════
+// ALERTS — Webhook payload to AXIOM dashboard
+// ══════════════════════════════════════════════════════════════════
+bull_msg = '{"ticker":"' + syminfo.ticker + '","action":"BUY","score":' + str.tostring(bull_score) + ',"bear_score":' + str.tostring(bear_score) + ',"price":' + str.tostring(math.round(close, 2)) + ',"stop":' + str.tostring(math.round(sl_bull, 2)) + ',"target1":' + str.tostring(math.round(t1_bull, 2)) + ',"target2":' + str.tostring(math.round(t2_bull, 2)) + ',"target3":' + str.tostring(math.round(t3_bull, 2)) + ',"rsi":' + str.tostring(math.round(rsi_v, 1)) + ',"macd_hist":' + str.tostring(math.round(macd_h, 4)) + ',"adx":' + str.tostring(math.round(adx_v, 1)) + ',"rvol":' + str.tostring(math.round(rvol, 2)) + ',"cmf":' + str.tostring(math.round(cmf_v, 3)) + ',"ema20":' + str.tostring(math.round(ema21_v, 2)) + ',"squeeze":' + str.tostring(true_squeeze) + ',"regime":"' + (regime_bull ? "BULL" : "NEUTRAL") + '","timeframe":"' + timeframe.period + '","pattern":"' + pat_bull + '"}'
+
+bear_msg = '{"ticker":"' + syminfo.ticker + '","action":"SELL","score":' + str.tostring(bear_score) + ',"bull_score":' + str.tostring(bull_score) + ',"price":' + str.tostring(math.round(close, 2)) + ',"stop":' + str.tostring(math.round(sl_bear, 2)) + ',"target1":' + str.tostring(math.round(t1_bear, 2)) + ',"target2":' + str.tostring(math.round(t2_bear, 2)) + ',"target3":' + str.tostring(math.round(t3_bear, 2)) + ',"rsi":' + str.tostring(math.round(rsi_v, 1)) + ',"macd_hist":' + str.tostring(math.round(macd_h, 4)) + ',"adx":' + str.tostring(math.round(adx_v, 1)) + ',"rvol":' + str.tostring(math.round(rvol, 2)) + ',"cmf":' + str.tostring(math.round(cmf_v, 3)) + ',"ema20":' + str.tostring(math.round(ema21_v, 2)) + ',"squeeze":' + str.tostring(true_squeeze) + ',"regime":"' + (regime_bull ? "NEUTRAL" : "BEAR") + '","timeframe":"' + timeframe.period + '","pattern":"' + pat_bear + '"}'
+
+alertcondition(bull_fire, "AXIOM BUY Signal",              bull_msg)
+alertcondition(bear_fire, "AXIOM SELL Signal",             bear_msg)
+alertcondition(true_squeeze and not true_squeeze[1],       "AXIOM Squeeze Detected", '{"ticker":"' + syminfo.ticker + '","action":"SQUEEZE","score":' + str.tostring(bull_score) + ',"price":' + str.tostring(math.round(close, 2)) + ',"timeframe":"' + timeframe.period + '"}')
+alertcondition(squeeze_fire_bull,                          "AXIOM Squeeze BULL Fire", bull_msg)
+alertcondition(squeeze_fire_bear,                          "AXIOM Squeeze BEAR Fire", bear_msg)
