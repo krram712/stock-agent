@@ -45,6 +45,7 @@ export const api = {
     history: (t: string, i = '1D', r = '3M')  => apiClient.get(`/api/v1/stocks/${t}/history`, { params: { interval: i, range: r } }),
     news: (t: string)                          => apiClient.get(`/api/v1/stocks/${t}/news`),
     search: (q: string)                        => apiClient.get('/api/v1/stocks/search', { params: { q } }),
+    fundamentals: (t: string)                  => apiClient.get(`/api/v1/stocks/${t}/fundamentals`),
   },
   analysis: {
     run: (d: any)              => apiClient.post('/api/v1/analysis', d),

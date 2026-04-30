@@ -8,6 +8,7 @@ import TradingViewTechnicals from './TradingViewTechnicals';
 import TradingViewMiniChart from './TradingViewMiniChart';
 import { useTradingViewSignals } from '../hooks/useTradingViewSignals';
 import OptionsEngine from './OptionsEngine';
+import FinvizPanel from './FinvizPanel';
 
 const HORIZONS = [
   { id: 'day', label: 'Day Trade' },
@@ -291,6 +292,7 @@ export default function AnalysisDashboard() {
                     </div>
                   );
                 })}
+                <FinvizPanel ticker={a.ticker} />
                 {Object.entries(SECTION_META).map(([key]) => <SectionCard key={key} sectionKey={key} data={(a as any)[key]} />)}
               </div>
               <div className="axiom-tv-widgets">
