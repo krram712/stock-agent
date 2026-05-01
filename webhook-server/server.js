@@ -199,73 +199,86 @@ app.post('/watchlist-analyze', async (req, res) => {
     return `[${ticker}] ${parts.length ? parts.join(', ') : 'no live data'}`;
   }).join('\n');
 
-  const prompt = `You are a stock and options analyst. Today: ${new Date().toDateString()}.
-I have LIVE market data for these tickers. Use the provided prices exactly — do not invent prices.
+  // Sub-batch into groups of 5 to avoid token limit truncation
+  const subBatches = [];
+  for (let i = 0; i < tickers.length; i += 5) subBatches.push(tickers.slice(i, i + 5));
 
-LIVE DATA:
-${dataLines}
+  const allResults = [];
+  for (const batch of subBatches) {
+    const batchLines = batch.map(ticker => {
+      const d = (realData && realData[ticker]) || {};
+      const parts = [];
+      if (d.price)          parts.push(`price=${Number(d.price).toFixed(2)}`);
+      if (d.changePercent)  parts.push(`chg%=${Number(d.changePercent).toFixed(2)}`);
+      if (d.change)         parts.push(`chg=${Number(d.change).toFixed(2)}`);
+      if (d.rsi14)          parts.push(`rsi=${Number(d.rsi14).toFixed(1)}`);
+      if (d.sma20)          parts.push(`sma20=${Number(d.sma20).toFixed(2)}`);
+      if (d.adx14)          parts.push(`adx=${Number(d.adx14).toFixed(1)}`);
+      if (d.overallTrend)   parts.push(`trend=${d.overallTrend}`);
+      if (d.bollingerUpper) parts.push(`bb_hi=${Number(d.bollingerUpper).toFixed(2)}`);
+      if (d.bollingerLower) parts.push(`bb_lo=${Number(d.bollingerLower).toFixed(2)}`);
+      if (d.week52High)     parts.push(`52h=${Number(d.week52High).toFixed(2)}`);
+      if (d.week52Low)      parts.push(`52l=${Number(d.week52Low).toFixed(2)}`);
+      return `${ticker}: ${parts.length ? parts.join(' ') : 'no live data'}`;
+    }).join('\n');
 
-Return a JSON array. For each ticker use the live price/changePct/rsi/sma20 from above.
-Estimate iv (implied volatility 20–90), support (near bollingerLower or -5%), resistance (near bollingerUpper or +8%),
-sector, earningsDate, entryScore (0–100), signal (BUY/SELL/WAIT/HOLD), riskLevel (LOW/MEDIUM/HIGH),
-optionType, strikes, expiry, newsHeadline (1 sentence current context), weekStrategy, monthStrategy,
-catalysts (array of 3 strings), risks (array of 3 strings).
+    const prompt = `Stock analyst. Today: ${new Date().toDateString()}.
+LIVE DATA (use these prices exactly):
+${batchLines}
 
-Each object: ticker, price, change, changePct, rsi, iv, trend (BULL/BEAR/SIDEWAYS), signal, ma20,
-support, resistance, sector, earningsDate, entryScore, riskLevel, optionType, strikes, expiry,
-newsHeadline, weekStrategy, monthStrategy, catalysts, risks.
-Return ONLY the raw JSON array. No markdown. Start with [ end with ].`;
+Return JSON array for ${batch.join(',')}. Keep newsHeadline ≤15 words, weekStrategy ≤20 words, monthStrategy ≤20 words.
+Fields: ticker,price,change,changePct,rsi,iv,trend(BULL/BEAR/SIDEWAYS),signal(BUY/SELL/WAIT/HOLD),ma20,support,resistance,sector,earningsDate,entryScore(0-100),riskLevel(LOW/MEDIUM/HIGH),optionType,strikes,expiry,newsHeadline,weekStrategy,monthStrategy,catalysts(3 strings),risks(3 strings).
+ONLY JSON array. No markdown.`;
 
-  try {
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 3500,
-        system: 'Return ONLY valid JSON array. No markdown. Start with [ end with ].',
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    });
+    try {
+      const r = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 4096,
+          system: 'Return ONLY a valid JSON array. No markdown. No explanation. Start with [ end with ].',
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      });
 
-    if (!r.ok) {
-      const errText = await r.text();
-      console.error('[WATCHLIST] Claude error:', errText.slice(0, 200));
-      return res.status(502).json({ error: `Claude HTTP ${r.status}` });
+      if (!r.ok) {
+        const errText = await r.text();
+        console.error('[WATCHLIST] Claude error:', errText.slice(0, 200));
+        batch.forEach(t => allResults.push({ ticker: t, error: true }));
+        continue;
+      }
+
+      const data = await r.json();
+      if (data.error) { batch.forEach(t => allResults.push({ ticker: t, error: true })); continue; }
+
+      const raw = data.content?.find(b => b.type === 'text')?.text || '';
+      const match = raw.match(/\[[\s\S]*\]/);
+      if (!match) { batch.forEach(t => allResults.push({ ticker: t, error: true })); continue; }
+
+      const parsed = JSON.parse(match[0]);
+      allResults.push(...parsed);
+    } catch (err) {
+      console.error('[WATCHLIST] Batch error:', err.message);
+      batch.forEach(t => allResults.push({ ticker: t, error: true }));
     }
-
-    const data = await r.json();
-    if (data.error) return res.status(502).json({ error: data.error.message });
-
-    const raw = data.content?.find(b => b.type === 'text')?.text || '';
-    const match = raw.match(/\[[\s\S]*\]/);
-    if (!match) return res.status(502).json({ error: 'No JSON array in Claude response' });
-
-    const results = JSON.parse(match[0]);
-
-    // Overlay real prices so Claude never overrides actual market data
-    const enriched = results.map(s => {
-      const d = (realData && realData[s.ticker]) || {};
-      return {
-        ...s,
-        price:     d.price         ? Number(d.price)          : s.price,
-        change:    d.change        ? Number(d.change)         : s.change,
-        changePct: d.changePercent ? Number(d.changePercent)  : s.changePct,
-        rsi:       d.rsi14         ? Number(d.rsi14)          : s.rsi,
-        ma20:      d.sma20         ? Number(d.sma20)          : s.ma20,
-      };
-    });
-
-    console.log(`[WATCHLIST] Analyzed ${enriched.length} tickers`);
-    res.json(enriched);
-  } catch (err) {
-    console.error('[WATCHLIST] Error:', err.message);
-    res.status(500).json({ error: err.message });
   }
+
+  // Overlay real prices so Claude never overrides actual market data
+  const enriched = allResults.map(s => {
+    const d = (realData && realData[s.ticker]) || {};
+    return {
+      ...s,
+      price:     d.price         ? Number(d.price)         : s.price,
+      change:    d.change        ? Number(d.change)        : s.change,
+      changePct: d.changePercent ? Number(d.changePercent) : s.changePct,
+      rsi:       d.rsi14         ? Number(d.rsi14)         : s.rsi,
+      ma20:      d.sma20         ? Number(d.sma20)         : s.ma20,
+    };
+  });
+
+  console.log(`[WATCHLIST] Analyzed ${enriched.length} tickers`);
+  res.json(enriched);
 });
 
 // ── GET /health ──────────────────────────────────────────────
