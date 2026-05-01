@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { apiClient } from "../services/api";
 
 // ─── Axiom palette ────────────────────────────────────────────────────────────
 const C = {
@@ -135,22 +136,67 @@ function generateFallback(ticker: string): StockData {
   };
 }
 
-async function callClaudeAPI(tickerBatch: string[]): Promise<StockData[]> {
+// Fetch real quote + technicals from the backend for a batch of tickers
+async function fetchRealData(tickers: string[]): Promise<Record<string, any>> {
+  const results: Record<string, any> = {};
+  await Promise.allSettled(
+    tickers.map(async ticker => {
+      try {
+        const [quoteRes, techRes] = await Promise.allSettled([
+          apiClient.get(`/api/v1/stocks/${ticker}/quote`),
+          apiClient.get(`/api/v1/stocks/${ticker}/technicals`),
+        ]);
+        const quote = quoteRes.status === "fulfilled" ? quoteRes.value.data : {};
+        const tech  = techRes.status  === "fulfilled" ? techRes.value.data  : {};
+        results[ticker] = { ...quote, ...tech };
+      } catch { results[ticker] = {}; }
+    })
+  );
+  return results;
+}
+
+async function callClaudeAPI(tickerBatch: string[], realData: Record<string, any>): Promise<StockData[]> {
   const apiKey = (import.meta as any).env?.VITE_ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("VITE_ANTHROPIC_API_KEY not set — use Seed Data or add the key to your .env");
 
-  const prompt = `You are a stock and options analyst. Date: ${new Date().toDateString()}.
-Return a JSON array for these tickers: ${tickerBatch.join(", ")}
-Each object must have EXACTLY these fields:
-ticker, price (number), change (number), changePct (number), rsi (number 0-100), iv (number 20-90), trend (BULL/BEAR/SIDEWAYS), signal (BUY/SELL/WAIT/HOLD), ma20 (number), support (number), resistance (number), sector (string), earningsDate (string), entryScore (number 0-100), riskLevel (LOW/MEDIUM/HIGH), optionType (string), strikes (string), expiry (string), newsHeadline (string 1 sentence), weekStrategy (string), monthStrategy (string), catalysts (array of 3 strings), risks (array of 3 strings)
-Return ONLY the raw JSON array. No markdown. No text before or after.`;
+  // Build real-data lines for each ticker to pass as context to Claude
+  const dataLines = tickerBatch.map(ticker => {
+    const d = realData[ticker] || {};
+    const parts: string[] = [];
+    if (d.price)          parts.push(`price=${Number(d.price).toFixed(2)}`);
+    if (d.changePercent)  parts.push(`changePct=${Number(d.changePercent).toFixed(2)}`);
+    if (d.change)         parts.push(`change=${Number(d.change).toFixed(2)}`);
+    if (d.rsi14)          parts.push(`rsi=${Number(d.rsi14).toFixed(1)}`);
+    if (d.sma20)          parts.push(`sma20=${Number(d.sma20).toFixed(2)}`);
+    if (d.adx14)          parts.push(`adx=${Number(d.adx14).toFixed(1)}`);
+    if (d.overallTrend)   parts.push(`trend=${d.overallTrend}`);
+    if (d.bollingerUpper) parts.push(`boll_upper=${Number(d.bollingerUpper).toFixed(2)}`);
+    if (d.bollingerLower) parts.push(`boll_lower=${Number(d.bollingerLower).toFixed(2)}`);
+    if (d.macdHistogram)  parts.push(`macd_hist=${Number(d.macdHistogram).toFixed(3)}`);
+    if (d.week52High)     parts.push(`52wk_high=${Number(d.week52High).toFixed(2)}`);
+    if (d.week52Low)      parts.push(`52wk_low=${Number(d.week52Low).toFixed(2)}`);
+    if (d.volume)         parts.push(`volume=${d.volume}`);
+    return `[${ticker}] ${parts.length ? parts.join(", ") : "no data"}`;
+  }).join("\n");
+
+  const prompt = `You are a stock and options analyst. Today: ${new Date().toDateString()}.
+I have LIVE market data for these tickers. Use it exactly — do not invent prices.
+
+LIVE DATA:
+${dataLines}
+
+Return a JSON array. For each ticker use the live price/changePct/rsi/sma20 from above.
+Estimate iv (implied volatility 20–90), support (near bollingerLower or -5% of price), resistance (near bollingerUpper or +8% of price), sector, earningsDate, entryScore (0–100), signal (BUY/SELL/WAIT/HOLD), riskLevel (LOW/MEDIUM/HIGH), optionType, strikes, expiry, newsHeadline (1 sentence current context), weekStrategy, monthStrategy, catalysts (3 strings), risks (3 strings).
+
+Each object must have: ticker, price, change, changePct, rsi, iv, trend (BULL/BEAR/SIDEWAYS), signal, ma20, support, resistance, sector, earningsDate, entryScore, riskLevel, optionType, strikes, expiry, newsHeadline, weekStrategy, monthStrategy, catalysts, risks.
+Return ONLY the raw JSON array. No markdown.`;
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method:"POST",
     headers:{ "Content-Type":"application/json", "x-api-key":apiKey, "anthropic-version":"2023-06-01" },
     body:JSON.stringify({
       model:"claude-sonnet-4-6",
-      max_tokens:3000,
+      max_tokens:3500,
       system:"Return ONLY valid JSON array. No markdown. Start with [ end with ].",
       messages:[{ role:"user", content:prompt }],
     }),
@@ -161,15 +207,33 @@ Return ONLY the raw JSON array. No markdown. No text before or after.`;
   const raw = data.content?.find((b: any) => b.type==="text")?.text || "";
   const match = raw.match(/\[[\s\S]*\]/);
   if (!match) throw new Error("No JSON array in response");
-  return JSON.parse(match[0]);
+
+  const claudeResults: StockData[] = JSON.parse(match[0]);
+
+  // Overlay real prices from the backend — never let Claude override actual market data
+  return claudeResults.map(s => {
+    const d = realData[s.ticker] || {};
+    return {
+      ...s,
+      price:     d.price      ? Number(d.price)           : s.price,
+      change:    d.change     ? Number(d.change)          : s.change,
+      changePct: d.changePercent ? Number(d.changePercent) : s.changePct,
+      rsi:       d.rsi14      ? Number(d.rsi14)           : s.rsi,
+      ma20:      d.sma20      ? Number(d.sma20)           : s.ma20,
+    };
+  });
 }
 
 async function analyzeTickersWithClaude(tickers: string[]): Promise<StockData[]> {
   const results: StockData[] = [];
   for (const batch of [tickers.slice(0,10), tickers.slice(10,20)]) {
     if (!batch.length) continue;
-    try { results.push(...await callClaudeAPI(batch)); }
-    catch (e: any) { batch.forEach(t => results.push(generateFallback(t))); }
+    try {
+      const realData = await fetchRealData(batch);
+      results.push(...await callClaudeAPI(batch, realData));
+    } catch (e: any) {
+      batch.forEach(t => results.push(generateFallback(t)));
+    }
   }
   const returned = new Set(results.map(r => r.ticker));
   tickers.forEach(t => { if (!returned.has(t)) results.push(generateFallback(t)); });
