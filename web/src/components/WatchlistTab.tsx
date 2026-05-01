@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { api } from '../services/api';
+import WatchlistEngine from './WatchlistEngine';
 
 interface Watchlist {
   id: string;
@@ -14,6 +15,7 @@ interface Props {
 }
 
 export default function WatchlistTab({ watchlists, onTickerSelect, onRefresh }: Props) {
+  const [activeTab, setActiveTab]       = useState<'lists' | 'engine'>('engine');
   const [creating, setCreating]         = useState(false);
   const [newName, setNewName]           = useState('');
   const [newTickers, setNewTickers]     = useState('');
@@ -76,6 +78,26 @@ export default function WatchlistTab({ watchlists, onTickerSelect, onRefresh }: 
 
   return (
     <div>
+      {/* Sub-tab bar */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        {([
+          { id: 'engine', label: '⚡ AI Engine' },
+          { id: 'lists',  label: `👁 My Lists${watchlists.length > 0 ? ` (${watchlists.length})` : ''}` },
+        ] as const).map(t => (
+          <button key={t.id} onClick={() => setActiveTab(t.id)}
+            style={{ padding: '7px 14px', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, fontSize: 11, letterSpacing: 1, marginBottom: -1,
+              borderBottom: activeTab === t.id ? '2px solid #00ff88' : '2px solid transparent',
+              color: activeTab === t.id ? '#00ff88' : '#3d5a6e' }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Engine tab */}
+      {activeTab === 'engine' && <WatchlistEngine />}
+
+      {/* My Lists tab */}
+      {activeTab === 'lists' && <div>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
         <div style={{ fontSize: 11, color: '#00d4ff', fontWeight: 700, letterSpacing: 2 }}>👁 WATCHLISTS</div>
@@ -202,6 +224,7 @@ export default function WatchlistTab({ watchlists, onTickerSelect, onRefresh }: 
           </div>
         ))}
       </div>
+    </div>}
     </div>
   );
 }

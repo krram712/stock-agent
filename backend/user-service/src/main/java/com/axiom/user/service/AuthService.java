@@ -83,12 +83,16 @@ public class AuthService {
     }
 
     private AuthResponse buildAuthResponse(User user) {
+        User.Role role     = user.getRole()   != null ? user.getRole()   : User.Role.USER;
+        User.SubscriptionTier tier = user.getTier() != null ? user.getTier() : User.SubscriptionTier.FREE;
+        User.AccountStatus status  = user.getStatus() != null ? user.getStatus() : User.AccountStatus.PENDING;
+
         SecretKey key = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
         String accessToken = Jwts.builder()
             .setSubject(user.getId().toString())
             .claim("email", user.getEmail())
-            .claim("role", user.getRole().name())
-            .claim("tier", user.getTier().name())
+            .claim("role", role.name())
+            .claim("tier", tier.name())
             .setIssuedAt(new Date())
             .setExpiration(new Date(System.currentTimeMillis() + accessTokenExpiry))
             .signWith(key)
@@ -103,9 +107,9 @@ public class AuthService {
         dto.setUsername(user.getUsername());
         dto.setFirstName(user.getFirstName());
         dto.setLastName(user.getLastName());
-        dto.setRole(user.getRole().name());
-        dto.setTier(user.getTier().name());
-        dto.setStatus(user.getStatus().name());
+        dto.setRole(role.name());
+        dto.setTier(tier.name());
+        dto.setStatus(status.name());
 
         AuthResponse response = new AuthResponse();
         response.setAccessToken(accessToken);
