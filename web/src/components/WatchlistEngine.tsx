@@ -16,9 +16,7 @@ const C = {
 
 const DEFAULT_TICKERS = [
   "NVDA","AAPL","MSFT","AMZN","GOOGL",
-  "META","TSLA","AMD","AVGO","TSM",
-  "PLTR","ARM","SMCI","MU","MRVL",
-  "SPY","QQQ","SOFI","COIN","NFLX",
+  "META","TSLA","AMD","AVGO","PLTR",
 ];
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -169,15 +167,12 @@ async function callClaudeAPI(tickerBatch: string[], realData: Record<string, any
 }
 
 async function analyzeTickersWithClaude(tickers: string[]): Promise<StockData[]> {
-  const results: StockData[] = [];
-  for (const batch of [tickers.slice(0,10), tickers.slice(10,20)]) {
-    if (!batch.length) continue;
-    try {
-      const realData = await fetchRealData(batch);
-      results.push(...await callClaudeAPI(batch, realData));
-    } catch (e: any) {
-      batch.forEach(t => results.push(generateFallback(t)));
-    }
+  let results: StockData[] = [];
+  try {
+    const realData = await fetchRealData(tickers);
+    results = await callClaudeAPI(tickers, realData);
+  } catch (e: any) {
+    tickers.forEach(t => results.push(generateFallback(t)));
   }
   const returned = new Set(results.map(r => r.ticker));
   tickers.forEach(t => { if (!returned.has(t)) results.push(generateFallback(t)); });
@@ -574,7 +569,7 @@ export default function WatchlistEngine() {
           <div style={{ fontSize:14, fontWeight:700, color:C.white, marginBottom:8 }}>AI Watchlist Engine Ready</div>
           <div style={{ fontSize:11, color:C.dim, marginBottom:20, lineHeight:1.8 }}>
             <b style={{ color:C.green }}>▶ RUN AI ENGINE</b> — Claude analyzes all {tickers.length} tickers live<br/>
-            <b style={{ color:C.blue }}>⚡ SEED DATA</b> — Instant results with pre-loaded May 2026 data
+            <b style={{ color:C.blue }}>⚡ SEED DATA</b> — Instant preview with sample data
           </div>
           <div style={{ display:"flex", gap:10, justifyContent:"center" }}>
             <button onClick={runEngine} style={{ background:`linear-gradient(135deg,${C.green},${C.blue})`, color:"#06101a", border:"none", borderRadius:7, padding:"10px 22px", fontSize:12, fontWeight:800, letterSpacing:2, cursor:"pointer" }}>▶ RUN AI ENGINE</button>
