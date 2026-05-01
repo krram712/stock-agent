@@ -47,7 +47,7 @@ ufw --force enable
 echo "[3/7] Cloning repository..."
 mkdir -p $APP_DIR
 if [ -d "$APP_DIR/.git" ]; then
-  cd $APP_DIR && git pull origin main
+  cd $APP_DIR && git fetch origin && git reset --hard origin/main
 else
   git clone $REPO $APP_DIR
 fi
@@ -79,9 +79,9 @@ cat > scripts/init-db.sh << 'EOF'
 #!/bin/bash
 set -e
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" <<-EOSQL
-  CREATE DATABASE IF NOT EXISTS axiom_users;
-  CREATE DATABASE IF NOT EXISTS axiom_analysis;
-  CREATE DATABASE IF NOT EXISTS axiom_stocks;
+  SELECT 'CREATE DATABASE axiom_users'   WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'axiom_users')\gexec
+  SELECT 'CREATE DATABASE axiom_analysis' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'axiom_analysis')\gexec
+  SELECT 'CREATE DATABASE axiom_stocks'  WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'axiom_stocks')\gexec
 EOSQL
 EOF
 chmod +x scripts/init-db.sh
