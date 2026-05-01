@@ -86,8 +86,15 @@ export const useStore = create<AppState>()(
       },
 
       loadWatchlists: async () => {
-        const res = await api.watchlists.getAll();
-        set({ watchlists: res.data });
+        try {
+          const res = await api.watchlists.getAll();
+          // Backend returns List<Watchlist>; guard against null/non-array
+          const data = Array.isArray(res.data) ? res.data : [];
+          set({ watchlists: data });
+        } catch (err: any) {
+          console.error('loadWatchlists failed:', err?.response?.status, err?.response?.data || err?.message);
+          set({ watchlists: [] });
+        }
       },
 
       clearAnalysisError: () => set({ analysisError: null }),

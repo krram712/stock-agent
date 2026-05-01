@@ -10,6 +10,7 @@ import { useTradingViewSignals } from '../hooks/useTradingViewSignals';
 import OptionsEngine from './OptionsEngine';
 import FinvizPanel from './FinvizPanel';
 import ScriptsTab from './ScriptsTab';
+import WatchlistTab from './WatchlistTab';
 
 const HORIZONS = [
   { id: 'day', label: 'Day Trade' },
@@ -397,31 +398,11 @@ export default function AnalysisDashboard() {
 
         {/* WATCHLIST TAB */}
         {activeTab === 'watchlist' && (
-          <div>
-            {watchlists.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '40px 20px', color: '#1a2a35', fontSize: 12 }}>
-                <div style={{ fontSize: 28, marginBottom: 10, opacity: 0.2 }}>👁</div>
-                No watchlists yet
-                <div style={{ marginTop: 6, fontSize: 10, color: '#0e1e26' }}>Create via API: POST /api/v1/watchlists</div>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {watchlists.map((wl: any) => (
-                  <div key={wl.id} style={{ background: 'rgba(255,255,255,0.018)', border: '1px solid rgba(0,212,255,0.12)', borderLeft: '3px solid #00d4ff', borderRadius: 10, padding: '14px 16px' }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: '#00d4ff', marginBottom: 8 }}>{wl.name}</div>
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      {(wl.tickers || []).map((t: string) => (
-                        <button key={t} onClick={() => { setTicker(t); setChartTicker(t); setActiveTab('analysis'); }}
-                          style={{ padding: '4px 10px', background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.2)', borderRadius: 5, color: '#00d4ff', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-                          {t}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <WatchlistTab
+            watchlists={watchlists}
+            onTickerSelect={(t) => { setTicker(t); setChartTicker(t); setActiveTab('analysis'); }}
+            onRefresh={() => loadWatchlists().catch(() => {})}
+          />
         )}
 
         {/* ADMIN TAB */}
