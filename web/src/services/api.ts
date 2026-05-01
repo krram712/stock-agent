@@ -4,8 +4,28 @@ const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
 export const apiClient = axios.create({ baseURL: BASE_URL, timeout: 30000 });
 
+const getAccessToken = (): string | null => {
+  const direct = localStorage.getItem('accessToken');
+  if (direct) return direct;
+
+  // Fallback: token may exist only in Zustand persisted state after reload.
+  try {
+    const raw = localStorage.getItem('axiom-storage');
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const token = parsed?.state?.accessToken;
+    if (typeof token === 'string' && token.length > 0) {
+      localStorage.setItem('accessToken', token);
+      return token;
+    }
+  } catch {
+    // Ignore malformed storage and proceed without token.
+  }
+  return null;
+};
+
 apiClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem('accessToken');
+  const token = getAccessToken();
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
