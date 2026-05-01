@@ -7,6 +7,7 @@ const express = require('express');
 const https   = require('https');
 const app = express();
 app.use(express.json({ limit: '1mb' }));
+app.use(express.text({ limit: '1mb', type: 'text/plain' }));
 
 const GROQ_API_KEY      = process.env.GROQ_API_KEY      || '';
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
@@ -17,8 +18,9 @@ const subscribers = new Set();
 
 // ── POST /webhook — TradingView Pine Script alerts ───────────
 app.post('/webhook', (req, res) => {
-  const body = req.body;
-  if (!body.ticker || !body.action || body.score === undefined) {
+  let body = req.body;
+  if (typeof body === 'string') { try { body = JSON.parse(body); } catch { return res.status(400).json({ error: 'Invalid JSON' }); } }
+  if (!body || !body.ticker || !body.action || body.score === undefined) {
     return res.status(400).json({ error: 'Invalid payload' });
   }
   const signal = {
