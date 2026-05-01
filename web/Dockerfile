@@ -5,6 +5,8 @@ RUN npm install
 COPY . .
 ARG VITE_API_URL=https://stockagentify.com
 ENV VITE_API_URL=$VITE_API_URL
+ARG VITE_ANTHROPIC_API_KEY
+ENV VITE_ANTHROPIC_API_KEY=$VITE_ANTHROPIC_API_KEY
 RUN npm run build
 
 FROM nginx:alpine

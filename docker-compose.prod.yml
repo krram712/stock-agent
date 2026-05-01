@@ -163,6 +163,7 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_API_URL: https://${DOMAIN:-stockagentify.com}
+        VITE_ANTHROPIC_API_KEY: ${VITE_ANTHROPIC_API_KEY}
     restart: always
     networks:
       - axiom-net
