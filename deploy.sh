@@ -90,15 +90,15 @@ chmod +x scripts/init-db.sh
 echo "[6/7] Configuring Nginx for $DOMAIN..."
 if [ "$IS_IP" = true ]; then
   # IP mode: use the plain HTTP config as the active config
-  cp nginx/conf.d/axiom-ip.conf nginx/conf.d/default.conf
+  cp nginx/conf.d/axiom-ip.template nginx/conf.d/default.conf
   # Remove axiom.conf so nginx only loads axiom-ip.conf (default.conf)
   rm -f nginx/conf.d/axiom.conf
 else
   # Domain mode: substitute domain name in config files
   sed -i "s/stockagentify\.com/$DOMAIN/g" nginx/conf.d/axiom.conf
-  sed -i "s/stockagentify\.com/$DOMAIN/g" nginx/conf.d/axiom-init.conf
+  sed -i "s/stockagentify\.com/$DOMAIN/g" nginx/conf.d/axiom-init.template
   # Start with HTTP-only config for cert issuance
-  cp nginx/conf.d/axiom-init.conf nginx/conf.d/default.conf
+  cp nginx/conf.d/axiom-init.template nginx/conf.d/default.conf
 fi
 
 # ── 7. Start services ──────────────────────────────────────────
