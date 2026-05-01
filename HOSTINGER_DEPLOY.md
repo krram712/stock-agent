@@ -148,6 +148,124 @@ docker system prune -f
 
 ---
 
+## Production-Safe Daily Backup + Restore
+
+This flow backs up:
+- PostgreSQL app databases (`axiom_users`, `axiom_analysis`, `axiom_stocks`)
+- The `.env` file (for disaster recovery)
+
+### 1) Create backup script
+
+```bash
+mkdir -p /opt/axiom/scripts /opt/axiom/backups
+
+cat > /opt/axiom/scripts/backup.sh << 'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+
+APP_DIR="/opt/axiom"
+BACKUP_DIR="$APP_DIR/backups"
+TS="$(date +%F_%H-%M-%S)"
+WORK_DIR="$BACKUP_DIR/tmp_$TS"
+OUT_FILE="$BACKUP_DIR/axiom-backup-$TS.tar.gz"
+
+mkdir -p "$WORK_DIR"
+cp "$APP_DIR/.env" "$WORK_DIR/.env"
+
+docker compose -f "$APP_DIR/docker-compose.prod.yml" --env-file "$APP_DIR/.env" exec -T postgres \
+  pg_dump -U axiom -d axiom_users | gzip > "$WORK_DIR/axiom_users.sql.gz"
+
+docker compose -f "$APP_DIR/docker-compose.prod.yml" --env-file "$APP_DIR/.env" exec -T postgres \
+  pg_dump -U axiom -d axiom_analysis | gzip > "$WORK_DIR/axiom_analysis.sql.gz"
+
+docker compose -f "$APP_DIR/docker-compose.prod.yml" --env-file "$APP_DIR/.env" exec -T postgres \
+  pg_dump -U axiom -d axiom_stocks | gzip > "$WORK_DIR/axiom_stocks.sql.gz"
+
+cat > "$WORK_DIR/backup-info.txt" << META
+timestamp=$TS
+host=$(hostname)
+repo=$(cd "$APP_DIR" && git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+META
+
+tar -C "$WORK_DIR" -czf "$OUT_FILE" .
+rm -rf "$WORK_DIR"
+
+# Retain last 14 days
+find "$BACKUP_DIR" -maxdepth 1 -type f -name "axiom-backup-*.tar.gz" -mtime +14 -delete
+
+echo "Backup complete: $OUT_FILE"
+EOF
+
+chmod +x /opt/axiom/scripts/backup.sh
+```
+
+### 2) Create restore script
+
+```bash
+cat > /opt/axiom/scripts/restore.sh << 'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ $# -ne 1 ]; then
+  echo "Usage: $0 /opt/axiom/backups/axiom-backup-YYYY-MM-DD_HH-MM-SS.tar.gz"
+  exit 1
+fi
+
+APP_DIR="/opt/axiom"
+ARCHIVE="$1"
+RESTORE_DIR="$APP_DIR/backups/restore_$(date +%F_%H-%M-%S)"
+
+mkdir -p "$RESTORE_DIR"
+tar -C "$RESTORE_DIR" -xzf "$ARCHIVE"
+
+cp "$RESTORE_DIR/.env" "$APP_DIR/.env"
+
+gunzip -c "$RESTORE_DIR/axiom_users.sql.gz" | \
+  docker compose -f "$APP_DIR/docker-compose.prod.yml" --env-file "$APP_DIR/.env" exec -T postgres psql -U axiom -d axiom_users
+
+gunzip -c "$RESTORE_DIR/axiom_analysis.sql.gz" | \
+  docker compose -f "$APP_DIR/docker-compose.prod.yml" --env-file "$APP_DIR/.env" exec -T postgres psql -U axiom -d axiom_analysis
+
+gunzip -c "$RESTORE_DIR/axiom_stocks.sql.gz" | \
+  docker compose -f "$APP_DIR/docker-compose.prod.yml" --env-file "$APP_DIR/.env" exec -T postgres psql -U axiom -d axiom_stocks
+
+docker compose -f "$APP_DIR/docker-compose.prod.yml" --env-file "$APP_DIR/.env" up -d
+
+echo "Restore complete. Unpacked files: $RESTORE_DIR"
+EOF
+
+chmod +x /opt/axiom/scripts/restore.sh
+```
+
+### 3) Schedule daily backup (cron)
+
+```bash
+( crontab -l 2>/dev/null; echo "15 2 * * * /opt/axiom/scripts/backup.sh >> /opt/axiom/backups/backup.log 2>&1" ) | crontab -
+crontab -l
+```
+
+### 4) Validate backup now
+
+```bash
+/opt/axiom/scripts/backup.sh
+ls -lh /opt/axiom/backups | tail -n 5
+tail -n 50 /opt/axiom/backups/backup.log 2>/dev/null || true
+```
+
+### 5) Restore when needed
+
+```bash
+/opt/axiom/scripts/restore.sh /opt/axiom/backups/axiom-backup-YYYY-MM-DD_HH-MM-SS.tar.gz
+```
+
+### Security notes
+- Backups include `.env`; treat backup files as secrets.
+- Keep permissions restricted (`root` only) on `/opt/axiom/backups`.
+- For stronger resilience, copy backups offsite (S3/B2/another VPS).
+
+---
+
 ## SSL Certificate Renewal
 
 Certbot renews automatically via the certbot container. To renew manually:
