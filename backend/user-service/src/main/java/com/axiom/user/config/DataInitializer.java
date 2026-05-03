@@ -34,23 +34,33 @@ public class DataInitializer implements ApplicationRunner {
     // ── Users ────────────────────────────────────────────────────────
     private void seedAdmin(String email, String username, String rawPassword,
                            String firstName, String lastName) {
-        if (userRepository.existsByEmail(email)) {
-            log.info("ℹ️  User already exists: {}", email);
-            return;
-        }
-        User user = User.builder()
-            .email(email)
-            .username(username)
-            .passwordHash(passwordEncoder.encode(rawPassword))
-            .firstName(firstName)
-            .lastName(lastName)
-            .role(email.startsWith("raghu") ? User.Role.ADMIN : User.Role.USER)
-            .tier(email.startsWith("raghu") ? User.SubscriptionTier.ENTERPRISE : User.SubscriptionTier.FREE)
-            .emailVerified(true)
-            .status(User.AccountStatus.APPROVED)
-            .build();
-        userRepository.save(user);
-        log.info("✅ Seeded user: {} ({})", email, user.getRole());
+        User.Role role = email.startsWith("raghu") ? User.Role.ADMIN : User.Role.USER;
+        User.SubscriptionTier tier = email.startsWith("raghu") ? User.SubscriptionTier.ENTERPRISE : User.SubscriptionTier.FREE;
+
+        userRepository.findByEmailOrUsername(email, email).ifPresentOrElse(existing -> {
+            // Ensure seeded accounts are always APPROVED (fixes PENDING after null→PENDING SQL migration)
+            if (existing.getStatus() != User.AccountStatus.APPROVED) {
+                existing.setStatus(User.AccountStatus.APPROVED);
+                userRepository.save(existing);
+                log.info("✅ Fixed status → APPROVED for seeded user: {}", email);
+            } else {
+                log.info("ℹ️  User already exists: {}", email);
+            }
+        }, () -> {
+            User user = User.builder()
+                .email(email)
+                .username(username)
+                .passwordHash(passwordEncoder.encode(rawPassword))
+                .firstName(firstName)
+                .lastName(lastName)
+                .role(role)
+                .tier(tier)
+                .emailVerified(true)
+                .status(User.AccountStatus.APPROVED)
+                .build();
+            userRepository.save(user);
+            log.info("✅ Seeded user: {} ({})", email, user.getRole());
+        });
     }
 
     // ── Scripts ──────────────────────────────────────────────────────

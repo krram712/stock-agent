@@ -31,10 +31,8 @@ export const useStore = create<AppState>()(
       login: async (email, password) => {
         set({ isLoading: true });
         try {
-          // Support both email and username login
-          const isEmail = email.includes('@');
-          const payload = isEmail ? { email, password } : { username: email, password };
-          const res = await api.auth.login(payload);
+          // Backend searches by both email and username using the `email` field
+          const res = await api.auth.login({ email, password });
           localStorage.setItem('accessToken', res.data.accessToken);
           localStorage.setItem('refreshToken', res.data.refreshToken);
           set({ user: res.data.user, accessToken: res.data.accessToken, isLoading: false });
@@ -76,7 +74,10 @@ export const useStore = create<AppState>()(
           const res = await api.analysis.run({ ticker, horizon, customPrompt });
           set({ currentAnalysis: res.data, isAnalyzing: false });
         } catch (err: any) {
-          set({ isAnalyzing: false, analysisError: err.response?.data?.message || 'Analysis failed. Ensure the backend is running.' });
+          const status = err.response?.status;
+          const msg = err.response?.data?.message || err.response?.data?.error || err.message || 'Unknown error';
+          const label = status ? `[${status}] ${msg}` : msg;
+          set({ isAnalyzing: false, analysisError: label });
         }
       },
 
