@@ -12,73 +12,137 @@ import FinvizPanel from './FinvizPanel';
 import ScriptsTab from './ScriptsTab';
 import WatchlistTab from './WatchlistTab';
 
+// ─── Theme ────────────────────────────────────────────────────────────────────
+const C = {
+  bg:      '#06101a',
+  sidebar: 'rgba(5,13,22,0.99)',
+  panel:   'rgba(255,255,255,0.022)',
+  border:  'rgba(255,255,255,0.07)',
+  green:   '#00ff88',
+  blue:    '#00d4ff',
+  purple:  '#a78bfa',
+  yellow:  '#fbbf24',
+  red:     '#ef4444',
+  orange:  '#f97316',
+  txt:     '#c8d6e0',
+  sub:     '#8ba0b0',
+  dim:     '#3d5a6e',
+  ghost:   '#2a4050',
+  font:    'JetBrains Mono, Fira Code, monospace',
+};
+
+// ─── Constants ────────────────────────────────────────────────────────────────
 const HORIZONS = [
-  { id: 'day', label: 'Day Trade' },
-  { id: 'weekly', label: 'Weekly' },
-  { id: 'monthly', label: 'Monthly' },
-  { id: 'quarterly', label: 'Quarterly' },
-  { id: 'longterm', label: 'Long Term' },
+  { id: 'day',       label: 'Day'   },
+  { id: 'weekly',    label: 'Week'  },
+  { id: 'monthly',   label: 'Month' },
+  { id: 'quarterly', label: 'Qtr'   },
+  { id: 'longterm',  label: 'Long'  },
 ];
-
-const SECTION_META: Record<string, { title: string; color: string }> = {
-  signalStrength:    { title: '🎯 Signal Strength',       color: '#00ff88' },
-  executiveSummary:  { title: '⚡ Executive Summary',     color: '#00ff88' },
-  marketPulse:       { title: '📡 Market Pulse',          color: '#00d4ff' },
-  technicalAnalysis: { title: '📐 Technical Analysis',    color: '#fbbf24' },
-  supportResistance: { title: '🎯 Support & Resistance',  color: '#f97316' },
-  fundamentals:      { title: '🏛 Fundamentals',          color: '#34d399' },
-  entryExitSignals:  { title: '🚦 Entry / Exit Signals',  color: '#ff6b6b' },
-  bullBearScorecard: { title: '🐂🐻 Bull/Bear Scorecard', color: '#ff9f43' },
-  riskFactors:       { title: '⚠️ Risk Factors',          color: '#ef4444' },
-  tradePlan:         { title: '📋 Options Strategy',      color: '#a78bfa' },
-};
-
+const QUICK_TICKERS = ['NVDA','AAPL','MSFT','TSLA','AMZN','META','GOOGL','AMD'];
+const INTERVALS = [
+  { label: '15m', value: '15' as const },
+  { label: '1h',  value: '60' as const },
+  { label: '1D',  value: 'D'  as const },
+  { label: '1W',  value: 'W'  as const },
+];
 const VERDICT_COLORS: Record<string, string> = {
-  STRONG_BULL: '#00ff88', MILD_BULL: '#fbbf24',
-  NEUTRAL: '#94a3b8', MILD_BEAR: '#fb923c', STRONG_BEAR: '#ef4444',
+  STRONG_BULL: '#00ff88', MILD_BULL: '#86efac',
+  NEUTRAL: '#94a3b8',
+  MILD_BEAR: '#fb923c',   STRONG_BEAR: '#ef4444',
 };
+const SECTION_META: Record<string, { title: string; color: string }> = {
+  signalStrength:    { title: '🎯 Signal Strength',       color: C.green  },
+  executiveSummary:  { title: '⚡ Executive Summary',     color: C.green  },
+  marketPulse:       { title: '📡 Market Pulse',          color: C.blue   },
+  technicalAnalysis: { title: '📐 Technical Analysis',    color: C.yellow },
+  supportResistance: { title: '🎯 Support & Resistance',  color: C.orange },
+  fundamentals:      { title: '🏛 Fundamentals',          color: '#34d399'},
+  entryExitSignals:  { title: '🚦 Entry / Exit Signals',  color: '#ff6b6b'},
+  bullBearScorecard: { title: '🐂🐻 Bull/Bear Scorecard', color: '#ff9f43'},
+  riskFactors:       { title: '⚠️ Risk Factors',          color: C.red   },
+  tradePlan:         { title: '📋 Options Strategy',      color: C.purple },
+};
+const RESEARCH_SECTIONS = [
+  { key: 'news',      label: '📰 News',     prompt: 'latest news and headlines today',                           color: C.blue   },
+  { key: 'analyst',   label: '⭐ Ratings',  prompt: 'analyst price target buy sell rating recommendations 2026', color: C.yellow },
+  { key: 'earnings',  label: '📢 Earnings', prompt: 'upcoming earnings results revenue EPS forecast',            color: C.green  },
+  { key: 'sentiment', label: '🐦 Sentiment',prompt: 'market sentiment retail institutional investor opinion',    color: C.purple },
+] as const;
 
+type ResearchState = { loading: boolean; result: string | null; provider: string | null; error: string | null; fetchedAt: string | null };
+const EMPTY_RS = (): ResearchState => ({ loading: false, result: null, provider: null, error: null, fetchedAt: null });
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
 function SectionCard({ sectionKey, data }: { sectionKey: string; data: any }) {
   const [open, setOpen] = useState(true);
   const meta = SECTION_META[sectionKey];
   if (!meta || !data) return null;
   const content = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
   return (
-    <div style={{ background: 'rgba(255,255,255,0.018)', border: `1px solid ${meta.color}20`, borderLeft: `3px solid ${meta.color}`, borderRadius: 10, marginBottom: 8, overflow: 'hidden' }}>
-      <button onClick={() => setOpen(o => !o)} style={{ width: '100%', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'transparent', border: 'none', cursor: 'pointer', color: meta.color, fontFamily: 'monospace', textAlign: 'left' }}>
-        <span style={{ fontSize: 13, fontWeight: 700 }}>{meta.title}</span>
+    <div style={{ background: C.panel, border: `1px solid ${meta.color}18`, borderLeft: `3px solid ${meta.color}`, borderRadius: 10, marginBottom: 8, overflow: 'hidden' }}>
+      <button onClick={() => setOpen(o => !o)} style={{ width: '100%', padding: '11px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'transparent', border: 'none', cursor: 'pointer', color: meta.color, fontFamily: C.font, textAlign: 'left' }}>
+        <span style={{ fontSize: 12, fontWeight: 700 }}>{meta.title}</span>
         <span style={{ fontSize: 9, opacity: 0.5 }}>{open ? '▲' : '▼'}</span>
       </button>
       {open && (
-        <div style={{ padding: '0 16px 14px', borderTop: `1px solid ${meta.color}15` }}>
-          <pre style={{ color: '#8ba0b0', fontSize: 12, lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0, fontFamily: 'monospace' }}>{content}</pre>
+        <div style={{ padding: '0 16px 14px', borderTop: `1px solid ${meta.color}12` }}>
+          <pre style={{ color: C.sub, fontSize: 12, lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0, fontFamily: C.font }}>{content}</pre>
         </div>
       )}
     </div>
   );
 }
 
+interface NavItemProps { icon: string; label: string; active: boolean; badge?: number; collapsed: boolean; onClick: () => void }
+function NavItem({ icon, label, active, badge, collapsed, onClick }: NavItemProps) {
+  return (
+    <button onClick={onClick} title={collapsed ? label : undefined} style={{
+      width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+      padding: collapsed ? '12px 0' : '11px 16px',
+      justifyContent: collapsed ? 'center' : 'flex-start',
+      background: active ? `${C.green}0f` : 'transparent',
+      border: 'none', borderLeft: `3px solid ${active ? C.green : 'transparent'}`,
+      color: active ? C.green : C.dim,
+      cursor: 'pointer', fontFamily: C.font, fontSize: 11,
+      fontWeight: active ? 700 : 400, letterSpacing: 1,
+      transition: 'all 0.15s', position: 'relative',
+    }}>
+      <span style={{ fontSize: 15 }}>{icon}</span>
+      {!collapsed && <span style={{ flex: 1, textAlign: 'left' }}>{label}</span>}
+      {!collapsed && badge != null && badge > 0 && (
+        <span style={{ padding: '1px 6px', background: `${C.green}18`, border: `1px solid ${C.green}30`, borderRadius: 99, fontSize: 9, color: C.green, fontWeight: 700 }}>{badge}</span>
+      )}
+      {collapsed && badge != null && badge > 0 && (
+        <span style={{ position: 'absolute', top: 7, right: 8, width: 7, height: 7, borderRadius: '50%', background: C.green }} />
+      )}
+    </button>
+  );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
 export default function AnalysisDashboard() {
   const {
     runAnalysis, isAnalyzing, analysisError, currentAnalysis, clearAnalysisError,
     logout, user, loadHistory, analysisHistory, loadWatchlists, watchlists,
   } = useStore();
   const navigate = useNavigate();
-  const [ticker, setTicker] = useState('');
-  const [horizon, setHorizon] = useState('weekly');
-  type ResearchState = { loading: boolean; result: string | null; provider: string | null; error: string | null; fetchedAt: string | null };
-  const EMPTY_RESEARCH = (): ResearchState => ({ loading: false, result: null, provider: null, error: null, fetchedAt: null });
-  const RESEARCH_SECTIONS = [
-    { key: 'news',      label: '📰 Latest News',     prompt: 'latest news and headlines today',                            color: '#00d4ff' },
-    { key: 'analyst',   label: '⭐ Analyst Ratings',  prompt: 'analyst price target buy sell rating recommendations 2026',  color: '#fbbf24' },
-    { key: 'earnings',  label: '📢 Earnings',          prompt: 'upcoming earnings results revenue EPS forecast',             color: '#00ff88' },
-    { key: 'sentiment', label: '🐦 Sentiment',         prompt: 'market sentiment retail institutional investor opinion',     color: '#a78bfa' },
-  ] as const;
-  const [webResearch, setWebResearch] = useState<Record<string, ResearchState>>({});
-  const [chartInterval, setChartInterval] = useState<'D' | '60' | '15' | 'W'>('D');
-  const [activeTab, setActiveTab] = useState<'analysis' | 'signals' | 'history' | 'watchlist' | 'options' | 'scripts' | 'admin'>('analysis');
-  const [adminUsers, setAdminUsers] = useState<any[]>([]);
-  const [adminLoading, setAdminLoading] = useState(false);
+
+  const [ticker,        setTicker]        = useState('');
+  const [horizon,       setHorizon]       = useState('weekly');
+  const [chartTicker,   setChartTicker]   = useState('AAPL');
+  const [chartInterval, setChartInterval] = useState<'D'|'60'|'15'|'W'>('D');
+  const [activeTab,     setActiveTab]     = useState('analysis');
+  const [sidebarOpen,   setSidebarOpen]   = useState(true);
+  const [researchTab,   setResearchTab]   = useState('news');
+  const [webResearch,   setWebResearch]   = useState<Record<string, ResearchState>>({});
+  const [adminUsers,    setAdminUsers]    = useState<any[]>([]);
+  const [adminLoading,  setAdminLoading]  = useState(false);
+
+  const { signals: tvSignals, latestSignal, isConnected: tvConnected } = useTradingViewSignals(chartTicker);
+
+  useEffect(() => { loadHistory().catch(() => {}); }, []);
+  useEffect(() => { loadWatchlists().catch(() => {}); }, []);
 
   const loadAdminUsers = useCallback(async () => {
     setAdminLoading(true);
@@ -86,411 +150,478 @@ export default function AnalysisDashboard() {
     setAdminLoading(false);
   }, []);
 
-  const handleApprove = async (id: string) => {
-    await api.admin.approveUser(id);
-    loadAdminUsers();
-  };
-  const handleReject = async (id: string) => {
-    await api.admin.rejectUser(id);
-    loadAdminUsers();
-  };
-  const [chartTicker, setChartTicker] = useState('AAPL');
+  const handleApprove = async (id: string) => { await api.admin.approveUser(id); loadAdminUsers(); };
+  const handleReject  = async (id: string) => { await api.admin.rejectUser(id);  loadAdminUsers(); };
 
-  const { signals: tvSignals, latestSignal, isConnected: tvConnected } = useTradingViewSignals(chartTicker);
-
-  useEffect(() => { loadHistory().catch(() => {}); }, []);
-  useEffect(() => { loadWatchlists().catch(() => {}); }, []);
-
-  const handleAnalyze = async () => {
-    if (!ticker.trim()) return;
-    const t = ticker.trim().toUpperCase();
-    setChartTicker(t);
+  const handleAnalyze = useCallback(async (overrideTicker?: string, overrideHorizon?: string) => {
+    const t  = (overrideTicker  || ticker).trim().toUpperCase();
+    const hz = overrideHorizon  || horizon;
+    if (!t) return;
+    setTicker(t); setHorizon(hz); setChartTicker(t);
     clearAnalysisError();
+    setActiveTab('analysis');
 
-    // Reset all research sections to loading
-    const initial: Record<string, ResearchState> = {};
-    RESEARCH_SECTIONS.forEach(s => { initial[s.key] = { loading: true, result: null, provider: null, error: null, fetchedAt: null }; });
-    setWebResearch(initial);
+    const init: Record<string, ResearchState> = {};
+    RESEARCH_SECTIONS.forEach(s => { init[s.key] = { loading: true, result: null, provider: null, error: null, fetchedAt: null }; });
+    setWebResearch(init);
 
-    // Fire all 4 research fetches in parallel
     RESEARCH_SECTIONS.forEach(section => {
-      fetch('/ai-search', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticker: t, prompt: section.prompt }),
-      })
+      fetch('/ai-search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ticker: t, prompt: section.prompt }) })
         .then(r => r.json())
         .then(d => setWebResearch(prev => ({ ...prev, [section.key]: { loading: false, result: d.result || d.error || null, provider: d.provider || null, error: null, fetchedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) } })))
-        .catch(() => setWebResearch(prev => ({ ...prev, [section.key]: { loading: false, result: null, provider: null, error: 'Failed to load', fetchedAt: null } })));
+        .catch(() => setWebResearch(prev => ({ ...prev, [section.key]: { ...EMPTY_RS(), error: 'Failed to load' } })));
     });
 
-    await runAnalysis(t, horizon, undefined);
-    setActiveTab('analysis');
-  };
+    await runAnalysis(t, hz, undefined);
+  }, [ticker, horizon, clearAnalysisError, runAnalysis]);
 
   const a = currentAnalysis;
   const verdictColor = a ? (VERDICT_COLORS[a.verdict] || '#64748b') : '#64748b';
-  const INTERVALS: { label: string; value: 'D' | '60' | '15' | 'W' }[] = [
-    { label: '15m', value: '15' }, { label: '1h', value: '60' },
-    { label: '1D', value: 'D' },   { label: '1W', value: 'W' },
+
+  const NAV = [
+    { id: 'analysis',  icon: '⚡', label: 'Analysis'                              },
+    { id: 'signals',   icon: '📡', label: 'Live Signals', badge: tvSignals.length },
+    { id: 'history',   icon: '📋', label: 'History',      badge: analysisHistory.length },
+    { id: 'watchlist', icon: '👁',  label: 'Watchlist'                             },
+    { id: 'options',   icon: '⚙️', label: 'Options Engine'                        },
+    { id: 'scripts',   icon: '📜', label: 'Scripts'                               },
+    ...(user?.role === 'ADMIN' ? [{ id: 'admin', icon: '👑', label: 'Admin' }] : []),
   ];
 
+  const CSS = `
+    @keyframes pulse  { 0%,100%{opacity:1}50%{opacity:.35} }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none} }
+    *{box-sizing:border-box}
+    ::-webkit-scrollbar{width:4px;height:4px}
+    ::-webkit-scrollbar-thumb{background:rgba(0,255,136,0.12);border-radius:3px}
+    input:focus{outline:none;border-color:${C.green}80!important;box-shadow:0 0 0 3px ${C.green}0c!important}
+    input::placeholder{color:${C.ghost}}
+    .ax-fade{animation:fadeIn 0.22s ease both}
+    @media(max-width:768px){
+      .ax-sidebar{display:none!important}
+      .ax-main{margin-left:0!important}
+      .ax-2col{grid-template-columns:1fr!important}
+      .ax-tv{order:-1}
+      .ax-metrics{grid-template-columns:repeat(2,1fr)!important}
+    }
+  `;
+
   return (
-    <div style={{ minHeight: '100vh', background: '#06101a', fontFamily: 'JetBrains Mono, Fira Code, monospace', color: '#c8d6e0' }}>
-      <style>{`
-        @media (max-width: 768px) {
-          .axiom-two-col { grid-template-columns: 1fr !important; }
-          .axiom-tv-widgets { order: -1; }
-          .axiom-verdict-row { flex-direction: column !important; }
-          .axiom-verdict-row > div { min-width: 0 !important; }
-          .axiom-signals-grid { grid-template-columns: repeat(2,1fr) !important; }
-        }
-        * { box-sizing: border-box; }
-        input:focus { border-color: rgba(0,255,136,0.5) !important; box-shadow: 0 0 0 2px rgba(0,255,136,0.07) !important; }
-        input::placeholder { color: #1a2e38; }
-        ::-webkit-scrollbar { width: 4px; }
-        ::-webkit-scrollbar-thumb { background: rgba(0,255,136,0.15); border-radius: 3px; }
-      `}</style>
+    <div style={{ minHeight: '100vh', background: C.bg, fontFamily: C.font, color: C.txt, display: 'flex', flexDirection: 'column' }}>
+      <style>{CSS}</style>
 
-      <div style={{ position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none', backgroundImage: 'linear-gradient(rgba(0,255,136,0.022) 1px,transparent 1px),linear-gradient(90deg,rgba(0,255,136,0.022) 1px,transparent 1px)', backgroundSize: '44px 44px' }} />
+      {/* Grid background */}
+      <div style={{ position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none', backgroundImage: `linear-gradient(${C.green}07 1px,transparent 1px),linear-gradient(90deg,${C.green}07 1px,transparent 1px)`, backgroundSize: '48px 48px' }} />
 
-      <div style={{ position: 'relative', zIndex: 2 }}><TradingViewTickerTape /></div>
+      {/* Ticker tape */}
+      <div style={{ position: 'relative', zIndex: 10 }}>
+        <TradingViewTickerTape />
+      </div>
 
-      <div style={{ position: 'relative', zIndex: 1, maxWidth: 1200, margin: '0 auto', padding: '28px 16px 48px' }}>
+      {/* Body: sidebar + main */}
+      <div style={{ display: 'flex', flex: 1, position: 'relative', zIndex: 1 }}>
 
-        {/* Top bar */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#00ff88', boxShadow: '0 0 8px #00ff88', display: 'inline-block' }} />
-            <span style={{ fontSize: 12, fontWeight: 900, letterSpacing: 3, background: 'linear-gradient(90deg,#00ff88,#00d4ff)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>AXIOM</span>
-            {user && <span style={{ fontSize: 9, color: '#2a4050' }}>· {user.username || user.email}</span>}
-            {user?.role === 'ADMIN' && <span style={{ padding: '2px 8px', background: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.4)', borderRadius: 99, fontSize: 8, color: '#a78bfa', fontWeight: 700 }}>👑 ADMIN</span>}
+        {/* ── Sidebar ───────────────────────────────────────────────────────── */}
+        <aside className="ax-sidebar" style={{
+          width: sidebarOpen ? 220 : 60, flexShrink: 0,
+          transition: 'width 0.22s ease',
+          position: 'sticky', top: 0, height: '100vh',
+          overflowY: 'auto', overflowX: 'hidden',
+          background: C.sidebar, borderRight: `1px solid ${C.green}10`,
+          display: 'flex', flexDirection: 'column',
+        }}>
+          {/* Logo */}
+          <div style={{ padding: sidebarOpen ? '18px 16px 14px' : '18px 0 14px', display: 'flex', alignItems: 'center', gap: 9, justifyContent: sidebarOpen ? 'flex-start' : 'center', borderBottom: `1px solid ${C.border}` }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: C.green, boxShadow: `0 0 10px ${C.green}`, flexShrink: 0, animation: 'pulse 2s infinite' }} />
+            {sidebarOpen && (
+              <span style={{ fontSize: 13, fontWeight: 900, letterSpacing: 3, background: `linear-gradient(90deg,${C.green},${C.blue})`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>AXIOM</span>
+            )}
           </div>
-          <button onClick={async () => { await logout(); navigate('/'); }} style={{ padding: '6px 14px', background: 'transparent', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 7, color: '#2a4050', fontSize: 9, fontFamily: 'inherit', cursor: 'pointer', letterSpacing: 1 }}>LOG OUT</button>
-        </div>
 
-        {/* Header */}
-        <div style={{ textAlign: 'center', marginBottom: 24 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 8 }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#00ff88', boxShadow: '0 0 8px #00ff88', display: 'inline-block' }} />
-            <span style={{ fontSize: 9, letterSpacing: 4, color: '#00ff88' }}>AXIOM TRADING INTELLIGENCE</span>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#00ff88', boxShadow: '0 0 8px #00ff88', display: 'inline-block' }} />
-          </div>
-          <h1 style={{ margin: '0 0 6px', fontSize: 'clamp(22px,4vw,36px)', fontWeight: 800, letterSpacing: -1, background: 'linear-gradient(120deg,#00ff88 0%,#00d4ff 45%,#a78bfa 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>AI Stock Analysis Agent</h1>
-          <p style={{ margin: 0, fontSize: 10, color: '#2a4050', letterSpacing: 2 }}>TECHNICAL · FUNDAMENTAL · ENTRY/EXIT · TRADE PLAN</p>
-        </div>
-
-        {/* Input */}
-        <div style={{ background: 'rgba(255,255,255,0.022)', border: '1px solid rgba(0,255,136,0.1)', borderRadius: 14, padding: 20, marginBottom: 16 }}>
-          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 14, alignItems: 'flex-end' }}>
-            <div>
-              <div style={{ fontSize: 8, letterSpacing: 2, color: '#2a4050', marginBottom: 6 }}>TICKER</div>
-              <input value={ticker} onChange={e => setTicker(e.target.value.toUpperCase().replace(/[^A-Z.]/g, ''))} onKeyDown={e => e.key === 'Enter' && handleAnalyze()} placeholder="AAPL" maxLength={8}
-                style={{ width: 110, background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(0,255,136,0.35)', borderRadius: 8, padding: '10px 12px', color: '#00ff88', fontSize: 20, fontWeight: 800, fontFamily: 'inherit', letterSpacing: 3, outline: 'none' }} />
-            </div>
-            <div style={{ flex: 1, minWidth: 200 }}>
-              <div style={{ fontSize: 8, letterSpacing: 2, color: '#2a4050', marginBottom: 6 }}>HORIZON</div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {HORIZONS.map(h => (
-                  <button key={h.id} onClick={() => setHorizon(h.id)} style={{ padding: '8px 12px', borderRadius: 6, fontSize: 11, fontFamily: 'inherit', fontWeight: 600, cursor: 'pointer', background: horizon === h.id ? 'rgba(0,255,136,0.12)' : 'rgba(255,255,255,0.03)', border: horizon === h.id ? '1px solid rgba(0,255,136,0.6)' : '1px solid rgba(255,255,255,0.07)', color: horizon === h.id ? '#00ff88' : '#3d5a6e' }}>{h.label}</button>
-                ))}
-              </div>
-            </div>
-          </div>
-{analysisError && <div style={{ color: '#ef4444', fontSize: 12, marginBottom: 10 }}>⚠️ {analysisError}</div>}
-          <button onClick={handleAnalyze} disabled={isAnalyzing || !ticker.trim()}
-            style={{ width: '100%', padding: 13, background: isAnalyzing || !ticker.trim() ? 'rgba(0,255,136,0.03)' : 'linear-gradient(135deg,rgba(0,255,136,0.16),rgba(0,212,255,0.12))', border: `1px solid ${isAnalyzing || !ticker.trim() ? 'rgba(0,255,136,0.1)' : 'rgba(0,255,136,0.35)'}`, borderRadius: 9, color: isAnalyzing || !ticker.trim() ? '#1e3040' : '#00ff88', fontSize: 11, letterSpacing: 3, fontWeight: 700, fontFamily: 'inherit', cursor: isAnalyzing || !ticker.trim() ? 'not-allowed' : 'pointer' }}>
-            {isAnalyzing ? '⟳ ANALYZING...' : '⚡ RUN FULL ANALYSIS'}
-          </button>
-        </div>
-
-        {/* Chart */}
-        <div>
-          <div style={{ display: 'flex', gap: 6, marginBottom: 8, justifyContent: 'flex-end' }}>
-            {INTERVALS.map(iv => (
-              <button key={iv.value} onClick={() => setChartInterval(iv.value)} style={{ padding: '5px 10px', borderRadius: 5, fontSize: 10, fontFamily: 'inherit', fontWeight: 600, cursor: 'pointer', background: chartInterval === iv.value ? 'rgba(0,255,136,0.15)' : 'rgba(255,255,255,0.03)', border: chartInterval === iv.value ? '1px solid rgba(0,255,136,0.5)' : '1px solid rgba(255,255,255,0.07)', color: chartInterval === iv.value ? '#00ff88' : '#3d5a6e' }}>{iv.label}</button>
+          {/* Nav */}
+          <nav style={{ flex: 1, paddingTop: 8 }}>
+            {NAV.map(item => (
+              <NavItem key={item.id} icon={item.icon} label={item.label} badge={item.badge}
+                active={activeTab === item.id} collapsed={!sidebarOpen}
+                onClick={() => { setActiveTab(item.id); if (item.id === 'admin') loadAdminUsers(); }} />
             ))}
-          </div>
-          <TradingViewChart ticker={chartTicker} interval={chartInterval} height={520} />
-        </div>
+          </nav>
 
-        {/* Tab Bar */}
-        <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-          {[
-            { id: 'analysis',  label: '⚡ Analysis' },
-            { id: 'signals',   label: `📡 Live Signals${tvSignals.length > 0 ? ` (${tvSignals.length})` : ''}` },
-            { id: 'history',   label: `📋 History${analysisHistory.length > 0 ? ` (${analysisHistory.length})` : ''}` },
-            { id: 'watchlist', label: `👁 Watchlist${watchlists.length > 0 ? ` (${watchlists.length})` : ''}` },
-            { id: 'options',   label: '⚙️ Options Engine' },
-            { id: 'scripts',   label: '📜 Scripts' },
-            ...(user?.role === 'ADMIN' ? [{ id: 'admin', label: '👑 Users' }] : []),
-          ].map(tab => (
-            <button key={tab.id} onClick={() => { setActiveTab(tab.id as any); if (tab.id === 'admin') loadAdminUsers(); }}
-              style={{ padding: '8px 14px', background: 'transparent', border: 'none', borderBottom: activeTab === tab.id ? '2px solid #00ff88' : '2px solid transparent', color: activeTab === tab.id ? '#00ff88' : '#6b8a9a', fontSize: 11, fontFamily: 'inherit', fontWeight: 700, cursor: 'pointer', letterSpacing: 1, marginBottom: -1 }}>
-              {tab.label}
+          {/* User info (expanded only) */}
+          {sidebarOpen && user && (
+            <div style={{ padding: '12px 16px', borderTop: `1px solid ${C.border}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                <div style={{ width: 30, height: 30, borderRadius: '50%', background: `${C.green}15`, border: `1px solid ${C.green}30`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: C.green, fontWeight: 700, flexShrink: 0 }}>
+                  {(user.firstName?.[0] || user.username?.[0] || user.email?.[0] || '?').toUpperCase()}
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 11, color: C.txt, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {user.firstName || user.username || user.email?.split('@')[0]}
+                    {user.role === 'ADMIN' && <span style={{ marginLeft: 5, fontSize: 9, color: C.purple }}>ADMIN</span>}
+                  </div>
+                  <div style={{ fontSize: 9, color: C.dim }}>{user.subscriptionTier || 'FREE'}</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Logout */}
+          <div style={{ padding: sidebarOpen ? '8px 12px 14px' : '8px 0 14px', display: 'flex', justifyContent: 'center' }}>
+            <button onClick={async () => { await logout(); navigate('/'); }} title="Log out"
+              style={{ padding: sidebarOpen ? '7px 14px' : '7px 10px', width: sidebarOpen ? '100%' : 38, borderRadius: 7, background: 'transparent', border: `1px solid ${C.border}`, color: C.dim, fontSize: sidebarOpen ? 10 : 13, fontFamily: C.font, cursor: 'pointer', letterSpacing: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+              {sidebarOpen ? '⏻ LOG OUT' : '⏻'}
             </button>
-          ))}
-          {tvConnected && (
-            <span style={{ marginLeft: 'auto', fontSize: 9, color: '#00ff88', alignSelf: 'center', display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#00ff88', boxShadow: '0 0 6px #00ff88', display: 'inline-block' }} /> LIVE
-            </span>
-          )}
-        </div>
+          </div>
+        </aside>
 
-        {/* ANALYSIS TAB */}
-        {activeTab === 'analysis' && (<>
-          {/* Loading state */}
-          {isAnalyzing && (
-            <div style={{ textAlign: 'center', padding: '50px 20px' }}>
-              <div style={{ fontSize: 28, marginBottom: 16, color: '#00ff88', animation: 'pulse 1.2s infinite' }}>⚡</div>
-              <div style={{ fontSize: 13, color: '#00ff88', fontWeight: 700, letterSpacing: 2, marginBottom: 6 }}>RUNNING LIVE ANALYSIS</div>
-              <div style={{ fontSize: 10, color: '#2a4050' }}>Fetching live market data and calculating scores...</div>
+        {/* ── Main ──────────────────────────────────────────────────────────── */}
+        <main className="ax-main" style={{ flex: 1, minHeight: '100vh', overflowX: 'hidden' }}>
+
+          {/* Sticky top bar */}
+          <div style={{ position: 'sticky', top: 0, zIndex: 20, background: 'rgba(6,16,26,0.97)', backdropFilter: 'blur(14px)', borderBottom: `1px solid ${C.border}`, padding: '9px 16px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+
+            {/* Hamburger */}
+            <button onClick={() => setSidebarOpen(o => !o)} title="Toggle sidebar"
+              style={{ padding: '6px 8px', background: 'transparent', border: 'none', color: C.dim, cursor: 'pointer', fontSize: 14, fontFamily: C.font, flexShrink: 0, borderRadius: 5 }}>
+              {sidebarOpen ? '◀' : '▶'}
+            </button>
+
+            {/* Ticker input */}
+            <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(0,0,0,0.5)', border: `1px solid ${C.green}40`, borderRadius: 8, overflow: 'hidden', flexShrink: 0 }}>
+              <span style={{ padding: '0 6px 0 10px', fontSize: 12, color: C.ghost, fontWeight: 700 }}>$</span>
+              <input value={ticker}
+                onChange={e => setTicker(e.target.value.toUpperCase().replace(/[^A-Z.]/g, ''))}
+                onKeyDown={e => e.key === 'Enter' && handleAnalyze()}
+                placeholder="AAPL" maxLength={8}
+                style={{ width: 88, background: 'transparent', border: 'none', padding: '9px 10px 9px 0', color: C.green, fontSize: 16, fontWeight: 800, fontFamily: C.font, letterSpacing: 2 }} />
             </div>
-          )}
-          {/* Error state with retry */}
-          {!isAnalyzing && analysisError && (
-            <div style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.25)', borderLeft: '3px solid #ef4444', borderRadius: 10, padding: '20px 24px', marginBottom: 14 }}>
-              <div style={{ fontSize: 12, color: '#ef4444', fontWeight: 700, marginBottom: 6 }}>⚠️ Analysis Failed</div>
-              <div style={{ fontSize: 11, color: '#8ba0b0', marginBottom: 16, fontFamily: 'monospace' }}>{analysisError}</div>
-              <button onClick={() => { clearAnalysisError(); if (ticker.trim()) handleAnalyze(); }}
-                style={{ padding: '8px 18px', background: 'rgba(0,255,136,0.1)', border: '1px solid rgba(0,255,136,0.4)', borderRadius: 7, color: '#00ff88', fontSize: 11, fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer', letterSpacing: 1 }}>
-                ↻ RETRY
-              </button>
-            </div>
-          )}
-          {a && !isAnalyzing && (<>
-            <div className="axiom-verdict-row" style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-              <div style={{ flexShrink: 0, background: verdictColor + '12', border: `1px solid ${verdictColor}30`, borderRadius: 10, padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ fontSize: 34, fontWeight: 800, color: verdictColor, lineHeight: 1 }}>{a.overallScore}</div>
-                <div><div style={{ fontSize: 8, letterSpacing: 2, color: '#2a4050' }}>SCORE</div><div style={{ fontSize: 10, color: verdictColor, fontWeight: 700 }}>/100</div></div>
-              </div>
-              <div style={{ flex: 1, minWidth: 200, background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10, padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 14 }}>
-                <span style={{ fontSize: 22 }}>{a.verdict?.includes('BULL') ? '🐂' : a.verdict?.includes('BEAR') ? '🐻' : '⚖️'}</span>
-                <div>
-                  <div style={{ fontSize: 8, letterSpacing: 2, color: '#2a4050', marginBottom: 2 }}>{horizon.toUpperCase()} VERDICT</div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: verdictColor }}>{a.verdict?.replace('_', ' ')}</div>
-                </div>
-                <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
-                  <div style={{ fontSize: 20, fontWeight: 800, color: '#00ff88', letterSpacing: 2 }}>{a.ticker}</div>
-                  <div style={{ fontSize: 10, color: '#3d5a6e' }}>${a.entryLow?.toFixed(2)} entry</div>
-                </div>
-              </div>
-            </div>
-            <div className="axiom-signals-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))', gap: 8, marginBottom: 14 }}>
-              {[
-                { label: 'ENTRY LOW',   value: `$${a.entryLow?.toFixed(2)}`,    color: '#00ff88' },
-                { label: 'ENTRY HIGH',  value: `$${a.entryHigh?.toFixed(2)}`,   color: '#00ff88' },
-                { label: 'STOP LOSS',   value: `$${a.stopLoss?.toFixed(2)}`,    color: '#ef4444' },
-                { label: 'TARGET 1',    value: `$${a.target1?.toFixed(2)}`,     color: '#fbbf24' },
-                { label: 'TARGET 2',    value: `$${a.target2?.toFixed(2)}`,     color: '#fbbf24' },
-                { label: 'TARGET 3',    value: `$${a.target3?.toFixed(2)}`,     color: '#fbbf24' },
-                { label: 'RISK/REWARD', value: `1:${a.riskReward?.toFixed(1)}`, color: '#00d4ff' },
-              ].map(item => (
-                <div key={item.label} style={{ background: 'rgba(255,255,255,0.018)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 8, padding: '10px 12px', textAlign: 'center' }}>
-                  <div style={{ fontSize: 8, letterSpacing: 1, color: '#2a4050', marginBottom: 4 }}>{item.label}</div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: item.color }}>{item.value}</div>
-                </div>
+
+            {/* Quick chips */}
+            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+              {QUICK_TICKERS.map(t => (
+                <button key={t} onClick={() => { setTicker(t); setChartTicker(t); }}
+                  style={{ padding: '5px 9px', borderRadius: 5, fontSize: 10, fontFamily: C.font, fontWeight: 700, cursor: 'pointer', letterSpacing: 0.5, background: ticker === t ? `${C.green}18` : 'transparent', border: `1px solid ${ticker === t ? C.green + '55' : C.border}`, color: ticker === t ? C.green : C.dim, transition: 'all 0.12s' }}>
+                  {t}
+                </button>
               ))}
             </div>
-            <div className="axiom-two-col" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 340px', gap: 14, alignItems: 'start' }}>
-              <div className="axiom-ai-sections">
-                {Object.keys(webResearch).length > 0 && RESEARCH_SECTIONS.map(section => {
-                  const rs = webResearch[section.key];
-                  if (!rs) return null;
-                  return (
-                    <div key={section.key} style={{ background: `rgba(255,255,255,0.018)`, border: `1px solid ${section.color}20`, borderLeft: `3px solid ${section.color}`, borderRadius: 10, marginBottom: 8, overflow: 'hidden' }}>
-                      <div style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 8, color: section.color, fontSize: 12, fontWeight: 700, borderBottom: `1px solid ${section.color}15` }}>
-                        {section.label}
-                        {rs.loading && <span style={{ fontSize: 10, color: '#3d5a6e', fontWeight: 400 }}>searching...</span>}
-                        {!rs.loading && rs.fetchedAt && <span style={{ fontSize: 9, color: '#2a4050', marginLeft: 'auto' }}>
-                          {rs.provider?.includes('tavily') ? '🌐 live' : '⚡ ai'} · {rs.fetchedAt}
-                        </span>}
-                      </div>
-                      <div style={{ padding: '10px 16px 12px' }}>
-                        {rs.loading && <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>{[0,1,2].map(i => <span key={i} style={{ width: 5, height: 5, borderRadius: '50%', background: section.color, opacity: 0.5 }} />)}</div>}
-                        {rs.error && <div style={{ color: '#ef4444', fontSize: 11 }}>⚠️ {rs.error}</div>}
-                        {rs.result && <pre style={{ color: '#8ba0b0', fontSize: 12, lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0, fontFamily: 'monospace' }}>{rs.result}</pre>}
-                      </div>
-                    </div>
-                  );
-                })}
-                <FinvizPanel ticker={a.ticker} />
-                {Object.entries(SECTION_META).map(([key]) => <SectionCard key={key} sectionKey={key} data={(a as any)[key]} />)}
-              </div>
-              <div className="axiom-tv-widgets">
-                <TradingViewMiniChart ticker={a.ticker} />
-                <TradingViewTechnicals ticker={a.ticker} />
-              </div>
-            </div>
-          </>)}
-          {!a && !isAnalyzing && !analysisError && (
-            <div style={{ textAlign: 'center', padding: '40px 20px', color: '#1a2a35', fontSize: 12 }}>
-              <div style={{ fontSize: 32, marginBottom: 12, opacity: 0.2 }}>📊</div>
-              Enter a ticker symbol and press RUN FULL ANALYSIS
-              <div style={{ marginTop: 8, fontSize: 10, color: '#0e1e26' }}>Try: AAPL · NVDA · TSLA · MSFT · AMZN · META · GOOGL</div>
-            </div>
-          )}
-        </>)}
 
-        {/* LIVE SIGNALS TAB */}
-        {activeTab === 'signals' && (
-          <div>
-            <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 11, color: tvConnected ? '#00ff88' : '#3d5a6e', fontWeight: 700 }}>{tvConnected ? '● CONNECTED' : '○ DISCONNECTED'}</span>
-              <span style={{ fontSize: 10, color: '#2a4050' }}>— Pine Script webhook receiver</span>
+            {/* Horizon pills */}
+            <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
+              {HORIZONS.map(h => (
+                <button key={h.id} onClick={() => setHorizon(h.id)}
+                  style={{ padding: '5px 10px', borderRadius: 5, fontSize: 10, fontFamily: C.font, fontWeight: 600, cursor: 'pointer', background: horizon === h.id ? `${C.blue}18` : 'transparent', border: `1px solid ${horizon === h.id ? C.blue + '50' : C.border}`, color: horizon === h.id ? C.blue : C.dim }}>
+                  {h.label}
+                </button>
+              ))}
             </div>
-            {latestSignal && (
-              <div style={{ background: latestSignal.action === 'BUY' ? 'rgba(0,255,136,0.08)' : 'rgba(239,68,68,0.08)', border: `1px solid ${latestSignal.action === 'BUY' ? '#00ff88' : '#ef4444'}40`, borderRadius: 10, padding: '14px 18px', marginBottom: 12 }}>
-                <div style={{ fontSize: 9, letterSpacing: 2, color: '#2a4050', marginBottom: 6 }}>LATEST SIGNAL</div>
-                <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: 22, fontWeight: 800, color: latestSignal.action === 'BUY' ? '#00ff88' : '#ef4444' }}>{latestSignal.action}</span>
-                  <span style={{ fontSize: 18, fontWeight: 700, color: '#c8d6e0' }}>{latestSignal.ticker}</span>
-                  <span style={{ fontSize: 14, color: '#fbbf24' }}>${latestSignal.price?.toFixed(2)}</span>
-                  <span style={{ fontSize: 12, color: '#00d4ff' }}>Score: {latestSignal.score}</span>
-                  <span style={{ fontSize: 10, color: '#2a4050' }}>{latestSignal.pattern}</span>
+
+            {/* Run button */}
+            <button onClick={() => handleAnalyze()} disabled={isAnalyzing || !ticker.trim()}
+              style={{ padding: '9px 18px', borderRadius: 8, fontSize: 11, fontFamily: C.font, fontWeight: 700, letterSpacing: 1, flexShrink: 0, cursor: isAnalyzing || !ticker.trim() ? 'not-allowed' : 'pointer', background: isAnalyzing || !ticker.trim() ? `${C.green}06` : `linear-gradient(135deg,${C.green}22,${C.blue}18)`, border: `1px solid ${isAnalyzing || !ticker.trim() ? C.green + '18' : C.green + '40'}`, color: isAnalyzing || !ticker.trim() ? C.ghost : C.green }}>
+              {isAnalyzing ? '⟳ ANALYZING...' : '⚡ RUN'}
+            </button>
+          </div>
+
+          {/* Chart */}
+          <div style={{ padding: '12px 16px 0' }}>
+            <div style={{ display: 'flex', gap: 5, marginBottom: 7, justifyContent: 'flex-end', alignItems: 'center' }}>
+              <span style={{ fontSize: 8, color: C.ghost, letterSpacing: 1, marginRight: 2 }}>INTERVAL</span>
+              {INTERVALS.map(iv => (
+                <button key={iv.value} onClick={() => setChartInterval(iv.value)}
+                  style={{ padding: '4px 9px', borderRadius: 5, fontSize: 10, fontFamily: C.font, fontWeight: 600, cursor: 'pointer', background: chartInterval === iv.value ? `${C.green}15` : 'transparent', border: `1px solid ${chartInterval === iv.value ? C.green + '50' : C.border}`, color: chartInterval === iv.value ? C.green : C.dim }}>
+                  {iv.label}
+                </button>
+              ))}
+            </div>
+            <TradingViewChart ticker={chartTicker} interval={chartInterval} height={460} />
+          </div>
+
+          {/* Tab content */}
+          <div style={{ padding: '16px 16px 64px' }} className="ax-fade">
+
+            {/* ── ANALYSIS ──────────────────────────────────────────────────── */}
+            {activeTab === 'analysis' && (<>
+              {isAnalyzing && (
+                <div style={{ textAlign: 'center', padding: '56px 20px' }}>
+                  <div style={{ fontSize: 32, color: C.green, animation: 'pulse 1.1s infinite', marginBottom: 14 }}>⚡</div>
+                  <div style={{ fontSize: 13, color: C.green, fontWeight: 700, letterSpacing: 3, marginBottom: 6 }}>RUNNING LIVE ANALYSIS</div>
+                  <div style={{ fontSize: 10, color: C.ghost }}>Fetching live market data · AI scoring · entry/exit calculation...</div>
+                </div>
+              )}
+
+              {!isAnalyzing && analysisError && (
+                <div style={{ background: `${C.red}08`, border: `1px solid ${C.red}25`, borderLeft: `3px solid ${C.red}`, borderRadius: 10, padding: '18px 22px', marginBottom: 14 }}>
+                  <div style={{ fontSize: 12, color: C.red, fontWeight: 700, marginBottom: 6 }}>⚠️ Analysis Failed</div>
+                  <div style={{ fontSize: 11, color: C.sub, marginBottom: 14, fontFamily: C.font }}>{analysisError}</div>
+                  <button onClick={() => { clearAnalysisError(); if (ticker.trim()) handleAnalyze(); }}
+                    style={{ padding: '7px 16px', background: `${C.green}10`, border: `1px solid ${C.green}40`, borderRadius: 7, color: C.green, fontSize: 11, fontWeight: 700, fontFamily: C.font, cursor: 'pointer', letterSpacing: 1 }}>
+                    ↻ RETRY
+                  </button>
+                </div>
+              )}
+
+              {a && !isAnalyzing && (<>
+                {/* Verdict row */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: 10, marginBottom: 12 }}>
+                  <div style={{ background: `${verdictColor}0e`, border: `1px solid ${verdictColor}28`, borderRadius: 12, padding: '16px 22px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minWidth: 90 }}>
+                    <div style={{ fontSize: 42, fontWeight: 900, color: verdictColor, lineHeight: 1 }}>{a.overallScore}</div>
+                    <div style={{ fontSize: 8, color: C.ghost, letterSpacing: 2, marginTop: 2 }}>/100</div>
+                    <div style={{ width: '100%', height: 3, background: `${verdictColor}18`, borderRadius: 2, marginTop: 8, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${a.overallScore}%`, background: verdictColor, borderRadius: 2 }} />
+                    </div>
+                  </div>
+                  <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 12, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 28 }}>{a.verdict?.includes('BULL') ? '🐂' : a.verdict?.includes('BEAR') ? '🐻' : '⚖️'}</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 8, letterSpacing: 2, color: C.ghost, marginBottom: 4 }}>{horizon.toUpperCase()} VERDICT</div>
+                      <div style={{ fontSize: 16, fontWeight: 800, color: verdictColor, letterSpacing: 1 }}>{a.verdict?.replace(/_/g, ' ')}</div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 22, fontWeight: 900, color: C.green, letterSpacing: 2 }}>{a.ticker}</div>
+                      {a.entryLow && <div style={{ fontSize: 10, color: C.dim }}>entry from ${a.entryLow?.toFixed(2)}</div>}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Metrics */}
+                <div className="ax-metrics" style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, marginBottom: 14 }}>
+                  {[
+                    { label: 'ENTRY LOW',   value: `$${a.entryLow?.toFixed(2)}`,    color: C.green  },
+                    { label: 'ENTRY HIGH',  value: `$${a.entryHigh?.toFixed(2)}`,   color: C.green  },
+                    { label: 'STOP LOSS',   value: `$${a.stopLoss?.toFixed(2)}`,    color: C.red    },
+                    { label: 'RISK/REWARD', value: `1:${a.riskReward?.toFixed(1)}`, color: C.blue   },
+                    { label: 'TARGET 1',    value: `$${a.target1?.toFixed(2)}`,     color: C.yellow },
+                    { label: 'TARGET 2',    value: `$${a.target2?.toFixed(2)}`,     color: C.yellow },
+                    { label: 'TARGET 3',    value: `$${a.target3?.toFixed(2)}`,     color: C.yellow },
+                    { label: 'HORIZON',     value: horizon.toUpperCase(),           color: C.purple },
+                  ].map(item => (
+                    <div key={item.label} style={{ background: C.panel, border: `1px solid ${item.color}15`, borderTop: `2px solid ${item.color}40`, borderRadius: 8, padding: '10px 12px', textAlign: 'center' }}>
+                      <div style={{ fontSize: 8, letterSpacing: 1, color: C.ghost, marginBottom: 5 }}>{item.label}</div>
+                      <div style={{ fontSize: 15, fontWeight: 800, color: item.color }}>{item.value}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Two-column */}
+                <div className="ax-2col" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 320px', gap: 14, alignItems: 'start' }}>
+                  <div>
+                    {/* Research sub-tabs */}
+                    {Object.keys(webResearch).length > 0 && (
+                      <div style={{ marginBottom: 12 }}>
+                        <div style={{ display: 'flex', gap: 0, borderBottom: `1px solid ${C.border}` }}>
+                          {RESEARCH_SECTIONS.map(s => {
+                            const rs = webResearch[s.key];
+                            const active = researchTab === s.key;
+                            return (
+                              <button key={s.key} onClick={() => setResearchTab(s.key)} style={{ padding: '7px 12px', background: 'transparent', border: 'none', borderBottom: `2px solid ${active ? s.color : 'transparent'}`, color: active ? s.color : C.dim, fontSize: 10, fontFamily: C.font, fontWeight: active ? 700 : 400, cursor: 'pointer', marginBottom: -1, display: 'flex', alignItems: 'center', gap: 5 }}>
+                                {s.label}
+                                {rs?.loading && <span style={{ width: 5, height: 5, borderRadius: '50%', background: s.color, animation: 'pulse 1s infinite', flexShrink: 0 }} />}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {RESEARCH_SECTIONS.map(s => {
+                          if (researchTab !== s.key) return null;
+                          const rs = webResearch[s.key];
+                          if (!rs) return null;
+                          return (
+                            <div key={s.key} style={{ background: C.panel, border: `1px solid ${s.color}18`, borderTop: `2px solid ${s.color}35`, borderRadius: '0 8px 8px 8px', padding: '14px 16px' }}>
+                              {rs.loading && (
+                                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                  {[0,1,2,3].map(i => <span key={i} style={{ width: 6, height: 6, borderRadius: '50%', background: s.color, opacity: 0.55, animation: `pulse 1.2s ${i * 0.2}s infinite` }} />)}
+                                  <span style={{ fontSize: 10, color: C.dim, marginLeft: 4 }}>Searching live sources...</span>
+                                </div>
+                              )}
+                              {rs.error && <div style={{ color: C.red, fontSize: 11 }}>⚠️ {rs.error}</div>}
+                              {rs.result && (<>
+                                {rs.fetchedAt && <div style={{ fontSize: 9, color: C.ghost, marginBottom: 8 }}>{rs.provider?.includes('tavily') ? '🌐 live web' : '⚡ ai generated'} · {rs.fetchedAt}</div>}
+                                <pre style={{ color: C.sub, fontSize: 12, lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0, fontFamily: C.font }}>{rs.result}</pre>
+                              </>)}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    <FinvizPanel ticker={a.ticker} />
+                    {Object.entries(SECTION_META).map(([key]) => <SectionCard key={key} sectionKey={key} data={(a as any)[key]} />)}
+                  </div>
+
+                  <div className="ax-tv">
+                    <TradingViewMiniChart ticker={a.ticker} />
+                    <TradingViewTechnicals ticker={a.ticker} />
+                  </div>
+                </div>
+              </>)}
+
+              {!a && !isAnalyzing && !analysisError && (
+                <div style={{ textAlign: 'center', padding: '60px 20px' }}>
+                  <div style={{ fontSize: 44, opacity: 0.08, marginBottom: 14 }}>📊</div>
+                  <div style={{ fontSize: 12, color: C.ghost, marginBottom: 16 }}>Enter a ticker and press RUN to start live analysis</div>
+                  <div style={{ display: 'flex', gap: 6, justifyContent: 'center', flexWrap: 'wrap' }}>
+                    {QUICK_TICKERS.map(t => (
+                      <button key={t} onClick={() => { setTicker(t); setChartTicker(t); }}
+                        style={{ padding: '6px 13px', borderRadius: 6, fontSize: 11, fontFamily: C.font, fontWeight: 700, cursor: 'pointer', background: `${C.green}08`, border: `1px solid ${C.green}20`, color: C.dim }}>
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>)}
+
+            {/* ── LIVE SIGNALS ──────────────────────────────────────────────── */}
+            {activeTab === 'signals' && (
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                  <span style={{ fontSize: 11, color: tvConnected ? C.green : C.dim, fontWeight: 700 }}>{tvConnected ? '● LIVE CONNECTED' : '○ DISCONNECTED'}</span>
+                  <span style={{ fontSize: 9, color: C.ghost }}>Pine Script webhook receiver</span>
+                  {tvSignals.length > 0 && <span style={{ marginLeft: 'auto', padding: '3px 10px', background: `${C.green}12`, border: `1px solid ${C.green}28`, borderRadius: 99, fontSize: 10, color: C.green, fontWeight: 700 }}>{tvSignals.length} signals</span>}
+                </div>
+
+                {latestSignal && (
+                  <div style={{ background: latestSignal.action === 'BUY' ? `${C.green}08` : `${C.red}08`, border: `1px solid ${latestSignal.action === 'BUY' ? C.green : C.red}40`, borderRadius: 10, padding: '14px 18px', marginBottom: 12 }}>
+                    <div style={{ fontSize: 8, letterSpacing: 2, color: C.ghost, marginBottom: 6 }}>LATEST SIGNAL</div>
+                    <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 20, fontWeight: 800, color: latestSignal.action === 'BUY' ? C.green : C.red }}>{latestSignal.action}</span>
+                      <span style={{ fontSize: 16, fontWeight: 700, color: C.txt }}>{latestSignal.ticker}</span>
+                      <span style={{ fontSize: 14, color: C.yellow }}>${latestSignal.price?.toFixed(2)}</span>
+                      <span style={{ fontSize: 12, color: C.blue }}>Score: {latestSignal.score}</span>
+                      <span style={{ fontSize: 10, color: C.dim }}>{latestSignal.pattern}</span>
+                      <button onClick={() => handleAnalyze(latestSignal.ticker)} style={{ marginLeft: 'auto', padding: '5px 12px', background: `${C.green}10`, border: `1px solid ${C.green}30`, borderRadius: 6, color: C.green, fontSize: 10, fontFamily: C.font, cursor: 'pointer', fontWeight: 700 }}>⚡ ANALYZE</button>
+                    </div>
+                  </div>
+                )}
+
+                {tvSignals.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '50px 20px' }}>
+                    <div style={{ fontSize: 34, opacity: 0.1, marginBottom: 14 }}>📡</div>
+                    <div style={{ fontSize: 12, color: C.ghost, marginBottom: 14 }}>No signals received yet</div>
+                    <div style={{ fontSize: 10, color: C.ghost, lineHeight: 2.2, background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: '16px 22px', display: 'inline-block', textAlign: 'left' }}>
+                      1. Add <code style={{ color: C.blue }}>AXIOM-Master-Pattern-Signal.pine</code> to TradingView<br/>
+                      2. Create alert → Webhook URL: <code style={{ color: C.blue }}>https://stockagentify.com/webhook</code><br/>
+                      3. Enable all 22 alert conditions for maximum coverage
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {tvSignals.map(s => {
+                      const isBuy = s.action === 'BUY';
+                      const col   = isBuy ? C.green : C.red;
+                      const rvol  = (s as any).rvol;
+                      return (
+                        <div key={s.id} style={{ background: C.panel, border: `1px solid ${col}20`, borderLeft: `3px solid ${col}`, borderRadius: 8, padding: '10px 14px' }}>
+                          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: 11, fontWeight: 800, color: col, minWidth: 36 }}>{s.action}</span>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: C.txt }}>{s.ticker}</span>
+                            {s.price != null && <span style={{ fontSize: 12, color: C.yellow }}>${Number(s.price).toFixed(2)}</span>}
+                            <span style={{ padding: '2px 8px', background: `${col}15`, border: `1px solid ${col}35`, borderRadius: 99, fontSize: 10, color: col, fontWeight: 700 }}>Score {s.score}</span>
+                            {s.rsi   != null && <span style={{ fontSize: 10, color: C.sub }}>RSI {Number(s.rsi).toFixed(0)}</span>}
+                            {s.adx   != null && <span style={{ fontSize: 10, color: C.sub }}>ADX {Number(s.adx).toFixed(0)}</span>}
+                            {rvol    != null && <span style={{ fontSize: 10, color: rvol > 2 ? C.purple : rvol > 1.5 ? C.yellow : C.dim }}>Vol {Number(rvol).toFixed(1)}x</span>}
+                            <span style={{ fontSize: 9, color: C.ghost, marginLeft: 'auto' }}>{s.timeframe && <>{s.timeframe} · </>}{new Date(s.timestamp).toLocaleTimeString()}</span>
+                            <button onClick={() => handleAnalyze(s.ticker)} style={{ padding: '4px 10px', background: `${C.green}08`, border: `1px solid ${C.green}25`, borderRadius: 5, color: C.green, fontSize: 9, fontFamily: C.font, cursor: 'pointer', fontWeight: 700 }}>⚡</button>
+                          </div>
+                          {s.pattern && <div style={{ fontSize: 10, color: C.blue, paddingLeft: 48, marginTop: 4 }}>▸ {s.pattern}</div>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── HISTORY ───────────────────────────────────────────────────── */}
+            {activeTab === 'history' && (
+              <div>
+                <div style={{ fontSize: 9, color: C.ghost, letterSpacing: 1, marginBottom: 12 }}>PAST ANALYSES — RE-ANALYZE runs fresh live data</div>
+                {analysisHistory.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '50px 20px' }}>
+                    <div style={{ fontSize: 34, opacity: 0.1, marginBottom: 12 }}>📋</div>
+                    <div style={{ fontSize: 12, color: C.ghost }}>No history yet — run your first analysis</div>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {analysisHistory.map((h: any) => (
+                      <div key={h.id} style={{ background: C.panel, border: `1px solid ${C.border}`, borderLeft: `3px solid ${VERDICT_COLORS[h.verdict] || '#64748b'}`, borderRadius: 8, padding: '12px 16px', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 15, fontWeight: 800, color: C.green, minWidth: 50 }}>{h.ticker}</span>
+                        <span style={{ fontSize: 11, color: VERDICT_COLORS[h.verdict] || '#64748b' }}>{h.verdict?.replace(/_/g, ' ')}</span>
+                        <span style={{ padding: '2px 8px', background: `${VERDICT_COLORS[h.verdict] || '#64748b'}15`, borderRadius: 99, fontSize: 10, color: VERDICT_COLORS[h.verdict] || '#64748b', fontWeight: 700 }}>Score {h.overallScore}</span>
+                        <span style={{ fontSize: 10, color: C.dim, textTransform: 'uppercase' }}>{h.horizon}</span>
+                        <span style={{ fontSize: 9, color: C.ghost }}>{new Date(h.createdAt || h.timestamp || Date.now()).toLocaleDateString()}</span>
+                        <button onClick={() => handleAnalyze(h.ticker, h.horizon || 'weekly')}
+                          style={{ marginLeft: 'auto', padding: '5px 12px', background: `${C.green}08`, border: `1px solid ${C.green}28`, borderRadius: 5, color: C.green, fontSize: 10, fontWeight: 700, fontFamily: C.font, cursor: 'pointer' }}>
+                          ↻ RE-ANALYZE
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── WATCHLIST ─────────────────────────────────────────────────── */}
+            {activeTab === 'watchlist' && (
+              <WatchlistTab
+                watchlists={watchlists}
+                onTickerSelect={(t) => { setTicker(t); setChartTicker(t); setActiveTab('analysis'); }}
+                onRefresh={() => loadWatchlists().catch(() => {})}
+              />
+            )}
+
+            {/* ── OPTIONS ENGINE ────────────────────────────────────────────── */}
+            {activeTab === 'options' && (
+              <OptionsEngine ticker={chartTicker} price={a?.entryHigh ? Number(a.entryHigh) : undefined} overallScore={a?.overallScore} />
+            )}
+
+            {/* ── SCRIPTS ───────────────────────────────────────────────────── */}
+            {activeTab === 'scripts' && (
+              <ScriptsTab isAdmin={user?.role === 'ADMIN'} />
+            )}
+
+            {/* ── ADMIN ─────────────────────────────────────────────────────── */}
+            {activeTab === 'admin' && (
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                  <div style={{ fontSize: 11, color: C.purple, fontWeight: 700, letterSpacing: 2 }}>👑 USER MANAGEMENT</div>
+                  <button onClick={loadAdminUsers} style={{ padding: '6px 14px', background: 'transparent', border: `1px solid ${C.purple}30`, borderRadius: 6, color: C.purple, fontSize: 10, fontFamily: C.font, cursor: 'pointer' }}>
+                    {adminLoading ? '⟳ Loading...' : '↻ Refresh'}
+                  </button>
+                </div>
+                {adminUsers.length === 0 && !adminLoading && (
+                  <div style={{ textAlign: 'center', padding: '30px', color: C.ghost, fontSize: 12 }}>No users found</div>
+                )}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {adminUsers.map((u: any) => {
+                    const sc = u.status === 'APPROVED' ? C.green : u.status === 'REJECTED' ? C.red : C.yellow;
+                    return (
+                      <div key={u.id} style={{ background: C.panel, border: `1px solid ${C.border}`, borderLeft: `3px solid ${sc}`, borderRadius: 8, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                        <div style={{ flex: 1, minWidth: 180 }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: C.txt }}>{u.firstName} {u.lastName}</div>
+                          <div style={{ fontSize: 10, color: C.dim }}>{u.email}</div>
+                          <div style={{ fontSize: 9, color: C.ghost, marginTop: 2 }}>{u.role} · joined {new Date(u.createdAt).toLocaleDateString()}</div>
+                        </div>
+                        <span style={{ padding: '3px 10px', borderRadius: 99, background: `${sc}15`, border: `1px solid ${sc}35`, fontSize: 9, color: sc, fontWeight: 700 }}>{u.status}</span>
+                        {u.status !== 'APPROVED' && (
+                          <button onClick={() => handleApprove(u.id)} style={{ padding: '5px 12px', background: `${C.green}10`, border: `1px solid ${C.green}40`, borderRadius: 6, color: C.green, fontSize: 10, fontFamily: C.font, cursor: 'pointer', fontWeight: 700 }}>✓ Approve</button>
+                        )}
+                        {u.status !== 'REJECTED' && u.role !== 'ADMIN' && (
+                          <button onClick={() => handleReject(u.id)} style={{ padding: '5px 12px', background: `${C.red}08`, border: `1px solid ${C.red}30`, borderRadius: 6, color: C.red, fontSize: 10, fontFamily: C.font, cursor: 'pointer', fontWeight: 700 }}>✗ Reject</button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
-            {tvSignals.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '40px 20px', color: '#1a2a35' }}>
-                <div style={{ fontSize: 28, marginBottom: 10, opacity: 0.2 }}>📡</div>
-                <div style={{ fontSize: 12, marginBottom: 8 }}>No signals yet</div>
-                <div style={{ fontSize: 10, color: '#0e1e26', lineHeight: 2 }}>
-                  1. Add <code style={{ color: '#00d4ff' }}>AXIOM-Master-Pattern-Signal.pine</code> to TradingView<br/>
-                  2. Create alert → Webhook URL: <code style={{ color: '#00d4ff' }}>https://stockagentify.com/webhook</code><br/>
-                  3. Enable all 22 alert conditions for maximum signals
-                </div>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {tvSignals.map(s => {
-                  const isBuy = s.action === 'BUY';
-                  const col   = isBuy ? '#00ff88' : '#ef4444';
-                  const oppScore = isBuy ? (s as any).bear_score : (s as any).bull_score;
-                  const rvol = (s as any).rvol;
-                  return (
-                    <div key={s.id} style={{ background: 'rgba(255,255,255,0.018)', borderLeft: `3px solid ${col}`, border: `1px solid ${col}25`, borderRadius: 8, padding: '10px 14px' }}>
-                      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: s.pattern ? 4 : 0 }}>
-                        <span style={{ fontSize: 11, fontWeight: 800, color: col, minWidth: 36 }}>{s.action}</span>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: '#c8d6e0' }}>{s.ticker}</span>
-                        {s.price != null && <span style={{ fontSize: 12, color: '#fbbf24' }}>${Number(s.price).toFixed(2)}</span>}
-                        <span style={{ padding: '2px 8px', background: `${col}18`, border: `1px solid ${col}40`, borderRadius: 99, fontSize: 10, color: col, fontWeight: 700 }}>Score {s.score}</span>
-                        {s.rsi   != null && <span style={{ fontSize: 10, color: '#94a3b8' }}>RSI {Number(s.rsi).toFixed(0)}</span>}
-                        {s.adx   != null && <span style={{ fontSize: 10, color: '#94a3b8' }}>ADX {Number(s.adx).toFixed(0)}</span>}
-                        {rvol    != null && <span style={{ fontSize: 10, color: rvol > 2 ? '#a78bfa' : rvol > 1.5 ? '#fbbf24' : '#3d5a6e' }}>Vol {Number(rvol).toFixed(1)}x</span>}
-                        {oppScore != null && <span style={{ fontSize: 9, color: '#3d5a6e' }}>{isBuy ? 'Bear' : 'Bull'}: {oppScore}</span>}
-                        <span style={{ fontSize: 9, color: '#2a4050', marginLeft: 'auto' }}>{s.timeframe && <>{s.timeframe} · </>}{new Date(s.timestamp).toLocaleTimeString()}</span>
-                      </div>
-                      {s.pattern && <div style={{ fontSize: 10, color: '#00d4ff', paddingLeft: 48 }}>▸ {s.pattern}</div>}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
 
-        {/* HISTORY TAB */}
-        {activeTab === 'history' && (
-          <div>
-            <div style={{ fontSize: 9, color: '#2a4050', letterSpacing: 1, marginBottom: 10 }}>
-              PAST ANALYSES — click RE-ANALYZE to run fresh live data
-            </div>
-            {analysisHistory.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '40px 20px', color: '#1a2a35', fontSize: 12 }}>
-                <div style={{ fontSize: 28, marginBottom: 10, opacity: 0.2 }}>📋</div>
-                No analysis history yet — run your first analysis above
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {analysisHistory.map((h: any) => (
-                  <div key={h.id} style={{ background: 'rgba(255,255,255,0.018)', border: '1px solid rgba(255,255,255,0.05)', borderLeft: `3px solid ${VERDICT_COLORS[h.verdict] || '#64748b'}`, borderRadius: 8, padding: '10px 16px', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 14, fontWeight: 800, color: '#00ff88' }}>{h.ticker}</span>
-                    <span style={{ fontSize: 11, color: VERDICT_COLORS[h.verdict] || '#64748b' }}>{h.verdict?.replace('_', ' ')}</span>
-                    <span style={{ fontSize: 12, color: '#fbbf24' }}>Score: {h.overallScore}</span>
-                    <span style={{ fontSize: 10, color: '#3d5a6e', textTransform: 'uppercase' }}>{h.horizon}</span>
-                    <span style={{ fontSize: 9, color: '#2a4050' }}>{new Date(h.createdAt || h.timestamp || Date.now()).toLocaleDateString()}</span>
-                    <button onClick={() => { const t = h.ticker; const hz = h.horizon || 'weekly'; setTicker(t); setHorizon(hz); setChartTicker(t); setActiveTab('analysis'); runAnalysis(t, hz, undefined); }}
-                      style={{ marginLeft: 'auto', padding: '4px 12px', background: 'rgba(0,255,136,0.08)', border: '1px solid rgba(0,255,136,0.3)', borderRadius: 5, color: '#00ff88', fontSize: 10, fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer' }}>
-                      ↻ RE-ANALYZE
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* WATCHLIST TAB */}
-        {activeTab === 'watchlist' && (
-          <WatchlistTab
-            watchlists={watchlists}
-            onTickerSelect={(t) => { setTicker(t); setChartTicker(t); setActiveTab('analysis'); }}
-            onRefresh={() => loadWatchlists().catch(() => {})}
-          />
-        )}
-
-        {/* ADMIN TAB */}
-        {activeTab === 'admin' && (
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-              <div style={{ fontSize: 11, color: '#a78bfa', fontWeight: 700, letterSpacing: 2 }}>👑 USER MANAGEMENT</div>
-              <button onClick={loadAdminUsers} style={{ padding: '6px 14px', background: 'transparent', border: '1px solid rgba(167,139,250,0.3)', borderRadius: 6, color: '#a78bfa', fontSize: 10, fontFamily: 'inherit', cursor: 'pointer' }}>
-                {adminLoading ? '⟳ Loading...' : '↻ Refresh'}
-              </button>
-            </div>
-            {adminUsers.length === 0 && !adminLoading && (
-              <div style={{ textAlign: 'center', padding: '30px', color: '#1a2a35', fontSize: 12 }}>No users found</div>
-            )}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {adminUsers.map((u: any) => {
-                const statusColor = u.status === 'APPROVED' ? '#00ff88' : u.status === 'REJECTED' ? '#ef4444' : '#fbbf24';
-                return (
-                  <div key={u.id} style={{ background: 'rgba(255,255,255,0.018)', border: '1px solid rgba(255,255,255,0.06)', borderLeft: `3px solid ${statusColor}`, borderRadius: 8, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                    <div style={{ flex: 1, minWidth: 180 }}>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: '#c8d6e0' }}>{u.firstName} {u.lastName}</div>
-                      <div style={{ fontSize: 10, color: '#3d5a6e' }}>{u.email}</div>
-                      <div style={{ fontSize: 9, color: '#2a4050', marginTop: 2 }}>{u.role} · joined {new Date(u.createdAt).toLocaleDateString()}</div>
-                    </div>
-                    <div style={{ padding: '3px 10px', borderRadius: 99, background: `${statusColor}18`, border: `1px solid ${statusColor}40`, fontSize: 9, color: statusColor, fontWeight: 700 }}>
-                      {u.status}
-                    </div>
-                    {u.status !== 'APPROVED' && (
-                      <button onClick={() => handleApprove(u.id)} style={{ padding: '5px 12px', background: 'rgba(0,255,136,0.1)', border: '1px solid rgba(0,255,136,0.4)', borderRadius: 6, color: '#00ff88', fontSize: 10, fontFamily: 'inherit', cursor: 'pointer', fontWeight: 700 }}>
-                        ✓ Approve
-                      </button>
-                    )}
-                    {u.status !== 'REJECTED' && u.role !== 'ADMIN' && (
-                      <button onClick={() => handleReject(u.id)} style={{ padding: '5px 12px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 6, color: '#ef4444', fontSize: 10, fontFamily: 'inherit', cursor: 'pointer', fontWeight: 700 }}>
-                        ✗ Reject
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
+            <div style={{ textAlign: 'center', marginTop: 44, fontSize: 8, color: C.ghost, letterSpacing: 2 }}>
+              AXIOM v1.1 · NOT FINANCIAL ADVICE · ALWAYS DYOR
             </div>
           </div>
-        )}
-
-        {/* SCRIPTS TAB */}
-        {activeTab === 'scripts' && (
-          <ScriptsTab isAdmin={user?.role === 'ADMIN'} />
-        )}
-
-        {/* OPTIONS ENGINE TAB */}
-        {activeTab === 'options' && (
-          <OptionsEngine
-            ticker={chartTicker}
-            price={a?.entryHigh ? Number(a.entryHigh) : undefined}
-            overallScore={a?.overallScore}
-          />
-        )}
-
-        <div style={{ textAlign: 'center', marginTop: 32, fontSize: 9, color: '#0e1e26', letterSpacing: 1 }}>
-          AXIOM v1.0 · NOT FINANCIAL ADVICE · ALWAYS DYOR
-        </div>
+        </main>
       </div>
     </div>
   );
 }
-
