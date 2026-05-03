@@ -11,6 +11,8 @@ spring:
 
 server:
   port: 8083
+  error:
+    include-message: always
 
 stock-data-service:
   url: ${STOCK_DATA_SERVICE_URL:http://stock-data-service:8082}
@@ -20,8 +22,4 @@ anthropic:
 
 analysis:
   cache-ttl-minutes: 30
-
-server:
-  error:
-    include-message: always
 
