@@ -197,12 +197,15 @@ export default function AnalysisDashboard() {
     input:focus{outline:none;border-color:${C.green}80!important;box-shadow:0 0 0 3px ${C.green}0c!important}
     input::placeholder{color:${C.ghost}}
     .ax-fade{animation:fadeIn 0.22s ease both}
+    .ax-bottom-nav{display:none}
     @media(max-width:768px){
       .ax-sidebar{display:none!important}
       .ax-main{margin-left:0!important}
       .ax-2col{grid-template-columns:1fr!important}
       .ax-tv{order:-1}
       .ax-metrics{grid-template-columns:repeat(2,1fr)!important}
+      .ax-bottom-nav{display:flex!important}
+      .ax-content-pad{padding-bottom:80px!important}
     }
   `;
 
@@ -338,7 +341,7 @@ export default function AnalysisDashboard() {
           </div>
 
           {/* Tab content */}
-          <div style={{ padding: '16px 16px 64px' }} className="ax-fade">
+          <div style={{ padding: '16px 16px 64px' }} className="ax-fade ax-content-pad">
 
             {/* ── ANALYSIS ──────────────────────────────────────────────────── */}
             {activeTab === 'analysis' && (<>
@@ -621,6 +624,26 @@ export default function AnalysisDashboard() {
             </div>
           </div>
         </main>
+      </div>
+
+      {/* ── Mobile bottom nav ─────────────────────────────────────────────── */}
+      <div className="ax-bottom-nav" style={{
+        position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 50,
+        background: 'rgba(5,13,22,0.97)', backdropFilter: 'blur(14px)',
+        borderTop: `1px solid ${C.border}`,
+        justifyContent: 'space-around', alignItems: 'stretch',
+        paddingBottom: 'env(safe-area-inset-bottom)',
+      }}>
+        {NAV.slice(0, 7).map(item => (
+          <button key={item.id} onClick={() => { setActiveTab(item.id); if (item.id === 'admin') loadAdminUsers(); }}
+            style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '8px 4px', background: 'transparent', border: 'none', borderTop: `2px solid ${activeTab === item.id ? C.green : 'transparent'}`, cursor: 'pointer', color: activeTab === item.id ? C.green : C.dim, fontFamily: C.font, position: 'relative' }}>
+            <span style={{ fontSize: 17 }}>{item.icon}</span>
+            <span style={{ fontSize: 8, fontWeight: activeTab === item.id ? 700 : 400, letterSpacing: 0.3 }}>{item.label.split(' ')[0]}</span>
+            {item.badge != null && item.badge > 0 && (
+              <span style={{ position: 'absolute', top: 5, right: '25%', width: 7, height: 7, borderRadius: '50%', background: C.green }} />
+            )}
+          </button>
+        ))}
       </div>
     </div>
   );
