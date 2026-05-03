@@ -239,7 +239,26 @@ export default function AnalysisDashboard() {
 
         {/* ANALYSIS TAB */}
         {activeTab === 'analysis' && (<>
-          {a && (<>
+          {/* Loading state */}
+          {isAnalyzing && (
+            <div style={{ textAlign: 'center', padding: '50px 20px' }}>
+              <div style={{ fontSize: 28, marginBottom: 16, color: '#00ff88', animation: 'pulse 1.2s infinite' }}>⚡</div>
+              <div style={{ fontSize: 13, color: '#00ff88', fontWeight: 700, letterSpacing: 2, marginBottom: 6 }}>RUNNING LIVE ANALYSIS</div>
+              <div style={{ fontSize: 10, color: '#2a4050' }}>Fetching live market data and calculating scores...</div>
+            </div>
+          )}
+          {/* Error state with retry */}
+          {!isAnalyzing && analysisError && (
+            <div style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.25)', borderLeft: '3px solid #ef4444', borderRadius: 10, padding: '20px 24px', marginBottom: 14 }}>
+              <div style={{ fontSize: 12, color: '#ef4444', fontWeight: 700, marginBottom: 6 }}>⚠️ Analysis Failed</div>
+              <div style={{ fontSize: 11, color: '#8ba0b0', marginBottom: 16, fontFamily: 'monospace' }}>{analysisError}</div>
+              <button onClick={() => { clearAnalysisError(); if (ticker.trim()) handleAnalyze(); }}
+                style={{ padding: '8px 18px', background: 'rgba(0,255,136,0.1)', border: '1px solid rgba(0,255,136,0.4)', borderRadius: 7, color: '#00ff88', fontSize: 11, fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer', letterSpacing: 1 }}>
+                ↻ RETRY
+              </button>
+            </div>
+          )}
+          {a && !isAnalyzing && (<>
             <div className="axiom-verdict-row" style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
               <div style={{ flexShrink: 0, background: verdictColor + '12', border: `1px solid ${verdictColor}30`, borderRadius: 10, padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 12 }}>
                 <div style={{ fontSize: 34, fontWeight: 800, color: verdictColor, lineHeight: 1 }}>{a.overallScore}</div>
@@ -304,7 +323,7 @@ export default function AnalysisDashboard() {
               </div>
             </div>
           </>)}
-          {!a && !isAnalyzing && (
+          {!a && !isAnalyzing && !analysisError && (
             <div style={{ textAlign: 'center', padding: '40px 20px', color: '#1a2a35', fontSize: 12 }}>
               <div style={{ fontSize: 32, marginBottom: 12, opacity: 0.2 }}>📊</div>
               Enter a ticker symbol and press RUN FULL ANALYSIS
@@ -374,6 +393,9 @@ export default function AnalysisDashboard() {
         {/* HISTORY TAB */}
         {activeTab === 'history' && (
           <div>
+            <div style={{ fontSize: 9, color: '#2a4050', letterSpacing: 1, marginBottom: 10 }}>
+              PAST ANALYSES — click RE-ANALYZE to run fresh live data
+            </div>
             {analysisHistory.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '40px 20px', color: '#1a2a35', fontSize: 12 }}>
                 <div style={{ fontSize: 28, marginBottom: 10, opacity: 0.2 }}>📋</div>
@@ -382,13 +404,16 @@ export default function AnalysisDashboard() {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {analysisHistory.map((h: any) => (
-                  <div key={h.id} onClick={() => { useStore.setState({ currentAnalysis: h }); setActiveTab('analysis'); }}
-                    style={{ background: 'rgba(255,255,255,0.018)', border: '1px solid rgba(255,255,255,0.05)', borderLeft: `3px solid ${VERDICT_COLORS[h.verdict] || '#64748b'}`, borderRadius: 8, padding: '10px 16px', cursor: 'pointer', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <div key={h.id} style={{ background: 'rgba(255,255,255,0.018)', border: '1px solid rgba(255,255,255,0.05)', borderLeft: `3px solid ${VERDICT_COLORS[h.verdict] || '#64748b'}`, borderRadius: 8, padding: '10px 16px', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 14, fontWeight: 800, color: '#00ff88' }}>{h.ticker}</span>
                     <span style={{ fontSize: 11, color: VERDICT_COLORS[h.verdict] || '#64748b' }}>{h.verdict?.replace('_', ' ')}</span>
                     <span style={{ fontSize: 12, color: '#fbbf24' }}>Score: {h.overallScore}</span>
                     <span style={{ fontSize: 10, color: '#3d5a6e', textTransform: 'uppercase' }}>{h.horizon}</span>
-                    <span style={{ fontSize: 9, color: '#2a4050', marginLeft: 'auto' }}>{new Date(h.createdAt || h.timestamp || Date.now()).toLocaleDateString()}</span>
+                    <span style={{ fontSize: 9, color: '#2a4050' }}>{new Date(h.createdAt || h.timestamp || Date.now()).toLocaleDateString()}</span>
+                    <button onClick={() => { const t = h.ticker; const hz = h.horizon || 'weekly'; setTicker(t); setHorizon(hz); setChartTicker(t); setActiveTab('analysis'); runAnalysis(t, hz, undefined); }}
+                      style={{ marginLeft: 'auto', padding: '4px 12px', background: 'rgba(0,255,136,0.08)', border: '1px solid rgba(0,255,136,0.3)', borderRadius: 5, color: '#00ff88', fontSize: 10, fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer' }}>
+                      ↻ RE-ANALYZE
+                    </button>
                   </div>
                 ))}
               </div>

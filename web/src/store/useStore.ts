@@ -69,9 +69,10 @@ export const useStore = create<AppState>()(
       },
 
       runAnalysis: async (ticker, horizon, customPrompt) => {
-        set({ isAnalyzing: true, analysisError: null });
+        // Clear stale data immediately so old results never linger
+        set({ isAnalyzing: true, analysisError: null, currentAnalysis: null });
         try {
-          const res = await api.analysis.run({ ticker, horizon, customPrompt });
+          const res = await api.analysis.run({ ticker, horizon, customPrompt, forceRefresh: true });
           set({ currentAnalysis: res.data, isAnalyzing: false });
         } catch (err: any) {
           const status = err.response?.status;
