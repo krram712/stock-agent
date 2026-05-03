@@ -8,7 +8,8 @@ const getAccessToken = (): string | null => {
   const direct = localStorage.getItem('accessToken');
   if (direct) return direct;
 
-  // Fallback: token may exist only in Zustand persisted state after reload.
+  // Fallback: token may exist only in Zustand persisted state after first load.
+  // Do NOT fall back if axiom-storage was explicitly cleared (logout / failed refresh).
   try {
     const raw = localStorage.getItem('axiom-storage');
     if (!raw) return null;
@@ -45,6 +46,7 @@ apiClient.interceptors.response.use(
         } catch {
           localStorage.removeItem('accessToken');
           localStorage.removeItem('refreshToken');
+          localStorage.removeItem('axiom-storage'); // clear Zustand cache so LoginPage doesn't auto-redirect back
           window.location.href = '/login';
         }
       }
