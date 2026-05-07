@@ -4,6 +4,7 @@ import { useStore } from '../store/useStore';
 import { api } from '../services/api';
 import TradingViewTickerTape from './TradingViewTickerTape';
 import TradingViewChart from './TradingViewChart';
+import TechCharts from './TechCharts';
 import TradingViewTechnicals from './TradingViewTechnicals';
 import TradingViewMiniChart from './TradingViewMiniChart';
 import { useTradingViewSignals } from '../hooks/useTradingViewSignals';
@@ -167,6 +168,7 @@ export default function AnalysisDashboard() {
   const [techData,      setTechData]      = useState<any>(null);
   const [techLoading,   setTechLoading]   = useState(false);
   const [techError,     setTechError]     = useState<string | null>(null);
+  const [chartMode,     setChartMode]     = useState<'custom' | 'tradingview'>('custom');
 
   const { signals: tvSignals, latestSignal, isConnected: tvConnected } = useTradingViewSignals(chartTicker);
 
@@ -176,6 +178,7 @@ export default function AnalysisDashboard() {
   const fetchTech = useCallback((t: string) => {
     setTechLoading(true);
     setTechError(null);
+    setChartMode('custom');
     api.technical.analyze(t)
       .then(r => setTechData(r.data))
       .catch(e => setTechError(e.response?.data?.detail || e.message || 'Technical service unavailable'))
@@ -599,24 +602,40 @@ export default function AnalysisDashboard() {
             {/* ── TECHNICAL ─────────────────────────────────────────────────── */}
             {activeTab === 'scanner' && (
               <div>
-                {/* Full Chart — always visible */}
-                <div style={{ marginBottom: 14 }}>
-                  <div style={{ display: 'flex', gap: 5, marginBottom: 7, justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: 10, fontWeight: 700, color: C.green, letterSpacing: 1 }}>
-                      {(techData?.ticker || ticker || chartTicker).toUpperCase()}
-                      {techData?.price && <span style={{ color: C.txt, fontWeight: 400, marginLeft: 8 }}>${techData.price.toFixed(2)}</span>}
-                    </span>
-                    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                      <span style={{ fontSize: 8, color: C.ghost, letterSpacing: 1, marginRight: 2 }}>INTERVAL</span>
-                      {INTERVALS.map(iv => (
-                        <button key={iv.value} onClick={() => setChartInterval(iv.value)}
-                          style={{ padding: '4px 9px', borderRadius: 5, fontSize: 10, fontFamily: C.font, fontWeight: 600, cursor: 'pointer', background: chartInterval === iv.value ? `${C.green}15` : 'transparent', border: `1px solid ${chartInterval === iv.value ? C.green + '50' : C.border}`, color: chartInterval === iv.value ? C.green : C.dim }}>
-                          {iv.label}
-                        </button>
-                      ))}
-                    </div>
+                {/* Chart header — ticker + chart mode toggle */}
+                <div style={{ display: 'flex', gap: 5, marginBottom: 7, justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: C.green, letterSpacing: 1 }}>
+                    {(techData?.ticker || ticker || chartTicker).toUpperCase()}
+                    {techData?.price && <span style={{ color: C.txt, fontWeight: 400, marginLeft: 8 }}>${techData.price.toFixed(2)}</span>}
+                  </span>
+                  <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                    {techData?.chart_data && (
+                      <>
+                        {(['custom', 'tradingview'] as const).map(mode => (
+                          <button key={mode} onClick={() => setChartMode(mode)}
+                            style={{ padding: '4px 9px', borderRadius: 5, fontSize: 10, fontFamily: C.font, fontWeight: 600, cursor: 'pointer', background: chartMode === mode ? `${C.blue}15` : 'transparent', border: `1px solid ${chartMode === mode ? C.blue + '50' : C.border}`, color: chartMode === mode ? C.blue : C.dim }}>
+                            {mode === 'custom' ? '📊 Indicators' : '📈 TradingView'}
+                          </button>
+                        ))}
+                        <span style={{ width: 1, height: 14, background: C.border, margin: '0 2px' }} />
+                      </>
+                    )}
+                    <span style={{ fontSize: 8, color: C.ghost, letterSpacing: 1, marginRight: 2 }}>INTERVAL</span>
+                    {INTERVALS.map(iv => (
+                      <button key={iv.value} onClick={() => setChartInterval(iv.value)}
+                        style={{ padding: '4px 9px', borderRadius: 5, fontSize: 10, fontFamily: C.font, fontWeight: 600, cursor: 'pointer', background: chartInterval === iv.value ? `${C.green}15` : 'transparent', border: `1px solid ${chartInterval === iv.value ? C.green + '50' : C.border}`, color: chartInterval === iv.value ? C.green : C.dim }}>
+                        {iv.label}
+                      </button>
+                    ))}
                   </div>
-                  <TradingViewChart ticker={techData?.ticker || ticker || chartTicker || 'AAPL'} interval={chartInterval} height={440} />
+                </div>
+
+                {/* Chart area — TechCharts (Indicators mode) or TradingView */}
+                <div style={{ marginBottom: 14 }}>
+                  {techData?.chart_data && chartMode === 'custom'
+                    ? <TechCharts data={techData.chart_data} levels={techData.levels} />
+                    : <TradingViewChart ticker={techData?.ticker || ticker || chartTicker || 'AAPL'} interval={chartInterval} height={440} />
+                  }
                 </div>
 
                 {/* Quick ticker chips when no data */}

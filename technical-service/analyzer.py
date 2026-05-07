@@ -475,6 +475,37 @@ def analyze(ticker: str, period: str = '6mo') -> dict:
         return [{'date': str(d.date()), 'price': round(float(c[d]), 2)}
                 for d in dates[mask][-20:]]
 
+    # ── Chart series for Recharts ─────────────────────────────────────────────
+    N_chart = min(90, len(c))
+    def _rv(series, idx, dp=2):
+        try:
+            val = float(series.iloc[idx])
+            return None if (math.isnan(val) or math.isinf(val)) else round(val, dp)
+        except Exception:
+            return None
+
+    chart_data = []
+    for ci in range(len(c) - N_chart, len(c)):
+        chart_data.append({
+            'date':     str(dates[ci].date()),
+            'open':     _rv(o,       ci),
+            'high':     _rv(h,       ci),
+            'low':      _rv(l,       ci),
+            'close':    _rv(c,       ci),
+            'volume':   int(v.iloc[ci]) if pd.notna(v.iloc[ci]) else 0,
+            'sma20':    _rv(sma20,   ci),
+            'sma50':    _rv(sma50,   ci),
+            'bb_upper': _rv(bb_up,   ci),
+            'bb_lower': _rv(bb_lo,   ci),
+            'vwap':     _rv(vwap_s,  ci),
+            'rsi':      _rv(rsi_s,   ci, 1),
+            'stoch_k':  _rv(stoch_k, ci, 1),
+            'stoch_d':  _rv(stoch_d, ci, 1),
+            'macd':     _rv(macd_s,  ci, 3),
+            'signal':   _rv(sig_s,   ci, 3),
+            'hist':     _rv(hist_s,  ci, 3),
+        })
+
     result = {
         'ticker':       ticker,
         'period':       period,
@@ -516,6 +547,7 @@ def analyze(ticker: str, period: str = '6mo') -> dict:
         'fibonacci':    {k: round(fv, 2) for k, fv in fib.items()},
         'buy_signals':  to_signals(buy_sig),
         'sell_signals': to_signals(sell_sig),
+        'chart_data':   chart_data,
     }
     return _clean(result)
 
