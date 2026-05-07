@@ -166,19 +166,26 @@ export default function AnalysisDashboard() {
   const [adminLoading,  setAdminLoading]  = useState(false);
   const [techData,      setTechData]      = useState<any>(null);
   const [techLoading,   setTechLoading]   = useState(false);
+  const [techError,     setTechError]     = useState<string | null>(null);
 
   const { signals: tvSignals, latestSignal, isConnected: tvConnected } = useTradingViewSignals(chartTicker);
 
   useEffect(() => { loadHistory().catch(() => {}); }, []);
   useEffect(() => { loadWatchlists().catch(() => {}); }, []);
 
+  const fetchTech = useCallback((t: string) => {
+    setTechLoading(true);
+    setTechError(null);
+    api.technical.analyze(t)
+      .then(r => setTechData(r.data))
+      .catch(e => setTechError(e.response?.data?.detail || e.message || 'Technical service unavailable'))
+      .finally(() => setTechLoading(false));
+  }, []);
+
   useEffect(() => {
     if (activeTab === 'scanner' && !techData && !techLoading) {
       const t = (ticker || chartTicker).trim().toUpperCase();
-      if (t) {
-        setTechLoading(true);
-        api.technical.analyze(t).then(r => setTechData(r.data)).catch(() => {}).finally(() => setTechLoading(false));
-      }
+      if (t) fetchTech(t);
     }
   }, [activeTab]);
 
@@ -199,8 +206,8 @@ export default function AnalysisDashboard() {
     clearAnalysisError();
     setActiveTab('analysis');
     setTechData(null);
-    setTechLoading(true);
-    api.technical.analyze(t).then(r => setTechData(r.data)).catch(() => {}).finally(() => setTechLoading(false));
+    setTechError(null);
+    fetchTech(t);
 
     const init: Record<string, ResearchState> = {};
     RESEARCH_SECTIONS.forEach(s => { init[s.key] = { loading: true, result: null, provider: null, error: null, fetchedAt: null }; });
@@ -368,19 +375,21 @@ export default function AnalysisDashboard() {
             </button>
           </div>
 
-          {/* Chart */}
-          <div style={{ padding: '12px 16px 0' }}>
-            <div style={{ display: 'flex', gap: 5, marginBottom: 7, justifyContent: 'flex-end', alignItems: 'center' }}>
-              <span style={{ fontSize: 8, color: C.ghost, letterSpacing: 1, marginRight: 2 }}>INTERVAL</span>
-              {INTERVALS.map(iv => (
-                <button key={iv.value} onClick={() => setChartInterval(iv.value)}
-                  style={{ padding: '4px 9px', borderRadius: 5, fontSize: 10, fontFamily: C.font, fontWeight: 600, cursor: 'pointer', background: chartInterval === iv.value ? `${C.green}15` : 'transparent', border: `1px solid ${chartInterval === iv.value ? C.green + '50' : C.border}`, color: chartInterval === iv.value ? C.green : C.dim }}>
-                  {iv.label}
-                </button>
-              ))}
+          {/* Chart — hidden on Technical tab (shown inline there instead) */}
+          {activeTab !== 'scanner' && (
+            <div style={{ padding: '12px 16px 0' }}>
+              <div style={{ display: 'flex', gap: 5, marginBottom: 7, justifyContent: 'flex-end', alignItems: 'center' }}>
+                <span style={{ fontSize: 8, color: C.ghost, letterSpacing: 1, marginRight: 2 }}>INTERVAL</span>
+                {INTERVALS.map(iv => (
+                  <button key={iv.value} onClick={() => setChartInterval(iv.value)}
+                    style={{ padding: '4px 9px', borderRadius: 5, fontSize: 10, fontFamily: C.font, fontWeight: 600, cursor: 'pointer', background: chartInterval === iv.value ? `${C.green}15` : 'transparent', border: `1px solid ${chartInterval === iv.value ? C.green + '50' : C.border}`, color: chartInterval === iv.value ? C.green : C.dim }}>
+                    {iv.label}
+                  </button>
+                ))}
+              </div>
+              <TradingViewChart ticker={chartTicker} interval={chartInterval} height={460} />
             </div>
-            <TradingViewChart ticker={chartTicker} interval={chartInterval} height={460} />
-          </div>
+          )}
 
           {/* Tab content */}
           <div style={{ padding: '16px 16px 64px' }} className="ax-fade ax-content-pad">
@@ -590,13 +599,33 @@ export default function AnalysisDashboard() {
             {/* ── TECHNICAL ─────────────────────────────────────────────────── */}
             {activeTab === 'scanner' && (
               <div>
-                {!techLoading && !techData && (
-                  <div style={{ textAlign: 'center', padding: '60px 20px' }}>
-                    <div style={{ fontSize: 40, opacity: 0.08, marginBottom: 14 }}>📐</div>
-                    <div style={{ fontSize: 12, color: C.ghost, marginBottom: 8 }}>Enter a ticker and press RUN to see technical analysis</div>
+                {/* Full Chart — always visible */}
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ display: 'flex', gap: 5, marginBottom: 7, justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: C.green, letterSpacing: 1 }}>
+                      {(techData?.ticker || ticker || chartTicker).toUpperCase()}
+                      {techData?.price && <span style={{ color: C.txt, fontWeight: 400, marginLeft: 8 }}>${techData.price.toFixed(2)}</span>}
+                    </span>
+                    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                      <span style={{ fontSize: 8, color: C.ghost, letterSpacing: 1, marginRight: 2 }}>INTERVAL</span>
+                      {INTERVALS.map(iv => (
+                        <button key={iv.value} onClick={() => setChartInterval(iv.value)}
+                          style={{ padding: '4px 9px', borderRadius: 5, fontSize: 10, fontFamily: C.font, fontWeight: 600, cursor: 'pointer', background: chartInterval === iv.value ? `${C.green}15` : 'transparent', border: `1px solid ${chartInterval === iv.value ? C.green + '50' : C.border}`, color: chartInterval === iv.value ? C.green : C.dim }}>
+                          {iv.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <TradingViewChart ticker={techData?.ticker || ticker || chartTicker || 'AAPL'} interval={chartInterval} height={440} />
+                </div>
+
+                {/* Quick ticker chips when no data */}
+                {!techLoading && !techData && !techError && (
+                  <div style={{ textAlign: 'center', padding: '20px 20px 30px' }}>
+                    <div style={{ fontSize: 11, color: C.ghost, marginBottom: 10 }}>Select a ticker to load 17-factor analysis</div>
                     <div style={{ display: 'flex', gap: 6, justifyContent: 'center', flexWrap: 'wrap' }}>
                       {['NVDA','AAPL','MSFT','TSLA','AMZN','META','GOOGL','AMD'].map(t => (
-                        <button key={t} onClick={() => { setTicker(t); setChartTicker(t); setTechLoading(true); api.technical.analyze(t).then(r => setTechData(r.data)).catch(() => {}).finally(() => setTechLoading(false)); }}
+                        <button key={t} onClick={() => { setTicker(t); setChartTicker(t); fetchTech(t); }}
                           style={{ padding: '6px 13px', borderRadius: 6, fontSize: 11, fontFamily: C.font, fontWeight: 700, cursor: 'pointer', background: `${C.green}08`, border: `1px solid ${C.green}20`, color: C.dim }}>
                           {t}
                         </button>
@@ -604,15 +633,30 @@ export default function AnalysisDashboard() {
                     </div>
                   </div>
                 )}
+
+                {/* Loading */}
                 {techLoading && (
-                  <div style={{ textAlign: 'center', padding: '50px 20px' }}>
-                    <div style={{ fontSize: 28, color: C.green, animation: 'pulse 1.1s infinite', marginBottom: 12 }}>⚡</div>
-                    <div style={{ fontSize: 13, color: C.green, fontWeight: 700, letterSpacing: 2, marginBottom: 6 }}>COMPUTING 17 FACTORS</div>
+                  <div style={{ textAlign: 'center', padding: '30px 20px' }}>
+                    <div style={{ fontSize: 24, color: C.green, animation: 'pulse 1.1s infinite', marginBottom: 10 }}>⚡</div>
+                    <div style={{ fontSize: 12, color: C.green, fontWeight: 700, letterSpacing: 2, marginBottom: 4 }}>COMPUTING 17 FACTORS</div>
                     <div style={{ fontSize: 10, color: C.ghost }}>{(ticker || chartTicker).toUpperCase()} · yfinance live data</div>
                   </div>
                 )}
+
+                {/* Error */}
+                {techError && !techLoading && (
+                  <div style={{ background: `${C.red}08`, border: `1px solid ${C.red}25`, borderLeft: `3px solid ${C.red}`, borderRadius: 10, padding: '14px 18px', marginBottom: 14 }}>
+                    <div style={{ fontSize: 11, color: C.red, fontWeight: 700, marginBottom: 4 }}>⚠️ Technical service error</div>
+                    <div style={{ fontSize: 10, color: C.sub, marginBottom: 10, fontFamily: C.font }}>{techError}</div>
+                    <button onClick={() => { const t = (ticker || chartTicker).trim().toUpperCase(); if (t) fetchTech(t); }}
+                      style={{ padding: '6px 14px', background: `${C.green}10`, border: `1px solid ${C.green}40`, borderRadius: 6, color: C.green, fontSize: 10, fontWeight: 700, fontFamily: C.font, cursor: 'pointer' }}>
+                      ↻ RETRY
+                    </button>
+                  </div>
+                )}
+
                 {techData && !techLoading && (<>
-                  {/* Score + header */}
+                  {/* ⚡ Bull/Bear score header */}
                   <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: 10, marginBottom: 12 }}>
                     <div style={{ background: `${techData.action_color}0e`, border: `1px solid ${techData.action_color}28`, borderRadius: 12, padding: '16px 22px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minWidth: 90 }}>
                       <div style={{ fontSize: 40, fontWeight: 900, color: techData.action_color, lineHeight: 1 }}>{techData.score > 0 ? `+${techData.score}` : techData.score}</div>
@@ -629,11 +673,14 @@ export default function AnalysisDashboard() {
                         </div>
                         <div style={{ fontSize: 18, fontWeight: 700, color: C.txt }}>${techData.price?.toFixed(2)}</div>
                         <div style={{ flex: 1, minWidth: 130 }}>
-                          <div style={{ fontSize: 8, color: C.ghost, marginBottom: 4 }}>BULL / BEAR  ·  {techData.confluence.bull_count}B · {techData.confluence.bear_count}R</div>
+                          <div style={{ fontSize: 8, color: C.ghost, marginBottom: 4 }}>⚡ BULL / BEAR  ·  {techData.confluence.bull_count}B · {techData.confluence.bear_count}R</div>
                           <div style={{ height: 8, background: `${C.red}20`, borderRadius: 4, overflow: 'hidden' }}>
                             <div style={{ height: '100%', width: `${techData.confluence.bull_pct}%`, background: techData.confluence.bull_pct >= 55 ? C.green : C.red, borderRadius: 4 }} />
                           </div>
-                          <div style={{ fontSize: 8, color: C.ghost, marginTop: 2 }}>{techData.confluence.bull_pct}% Bull Confluence</div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 8, color: C.ghost, marginTop: 2 }}>
+                            <span>{techData.confluence.bull_pct}% Bull</span>
+                            <span>{100 - techData.confluence.bull_pct}% Bear</span>
+                          </div>
                         </div>
                       </div>
                       {techData.reasons?.length > 0 && (
@@ -646,36 +693,36 @@ export default function AnalysisDashboard() {
                     </div>
                   </div>
 
-                  {/* Indicator cards */}
+                  {/* Indicators */}
                   {techData.indicators && (<>
                     <div style={{ fontSize: 9, color: C.ghost, letterSpacing: 2, marginBottom: 8 }}>TECHNICAL INDICATORS</div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(110px,1fr))', gap: 7, marginBottom: 14 }}>
                       {[
-                        { k: 'RSI (14)',   v: techData.indicators.rsi,          col: techData.indicators.rsi < 30 ? C.green : techData.indicators.rsi > 70 ? C.red : C.sub },
-                        { k: 'MACD',      v: techData.indicators.macd,          col: techData.indicators.macd > techData.indicators.signal ? C.green : C.red },
-                        { k: 'Signal',    v: techData.indicators.signal,        col: C.sub },
-                        { k: 'Histogram', v: techData.indicators.hist,          col: (techData.indicators.hist ?? 0) > 0 ? C.green : C.red },
-                        { k: 'Stoch %K',  v: techData.indicators.stoch_k,      col: techData.indicators.stoch_k < 20 ? C.green : techData.indicators.stoch_k > 80 ? C.red : C.sub },
-                        { k: 'Stoch %D',  v: techData.indicators.stoch_d,      col: C.sub },
-                        { k: 'ATR',       v: `$${techData.indicators.atr}`,     col: C.yellow },
-                        { k: 'VWAP',      v: `$${techData.indicators.vwap}`,    col: C.blue   },
-                        { k: 'SMA 20',    v: `$${techData.indicators.sma20}`,   col: C.yellow },
-                        { k: 'SMA 50',    v: `$${techData.indicators.sma50}`,   col: C.orange },
-                        { k: 'SMA 200',   v: `$${techData.indicators.sma200}`,  col: C.green  },
-                        { k: 'BB Upper',  v: `$${techData.indicators.bb_upper}`,col: C.dim    },
-                        { k: 'BB Lower',  v: `$${techData.indicators.bb_lower}`,col: C.dim    },
-                        { k: 'SAR',       v: techData.indicators.sar_trend === 'uptrend' ? '↑ Uptrend' : '↓ Downtrend', col: techData.indicators.sar_trend === 'uptrend' ? C.green : C.red },
+                        { k: 'RSI (14)',   v: techData.indicators.rsi?.toFixed(1),   col: techData.indicators.rsi < 30 ? C.green : techData.indicators.rsi > 70 ? C.red : C.sub },
+                        { k: 'MACD',      v: techData.indicators.macd?.toFixed(3),   col: techData.indicators.macd > techData.indicators.signal ? C.green : C.red },
+                        { k: 'Signal',    v: techData.indicators.signal?.toFixed(3), col: C.sub },
+                        { k: 'Histogram', v: techData.indicators.hist?.toFixed(3),   col: (techData.indicators.hist ?? 0) > 0 ? C.green : C.red },
+                        { k: 'Stoch %K',  v: techData.indicators.stoch_k?.toFixed(1),col: techData.indicators.stoch_k < 20 ? C.green : techData.indicators.stoch_k > 80 ? C.red : C.sub },
+                        { k: 'Stoch %D',  v: techData.indicators.stoch_d?.toFixed(1),col: C.sub },
+                        { k: 'ATR',       v: `$${techData.indicators.atr}`,          col: C.yellow },
+                        { k: 'VWAP',      v: `$${techData.indicators.vwap}`,         col: C.blue   },
+                        { k: 'SMA 20',    v: `$${techData.indicators.sma20}`,        col: C.yellow },
+                        { k: 'SMA 50',    v: `$${techData.indicators.sma50}`,        col: C.orange },
+                        { k: 'SMA 200',   v: `$${techData.indicators.sma200}`,       col: C.green  },
+                        { k: 'BB Upper',  v: `$${techData.indicators.bb_upper}`,     col: C.dim    },
+                        { k: 'BB Lower',  v: `$${techData.indicators.bb_lower}`,     col: C.dim    },
+                        { k: 'SAR Trend', v: techData.indicators.sar_trend === 'uptrend' ? '↑ Uptrend' : '↓ Downtrend', col: techData.indicators.sar_trend === 'uptrend' ? C.green : C.red },
                       ].map(ind => (
                         <div key={ind.k} style={{ background: C.panel, border: `1px solid ${C.border}`, borderTop: `2px solid ${ind.col}40`, borderRadius: 8, padding: '10px 12px', textAlign: 'center' }}>
                           <div style={{ fontSize: 8, color: C.ghost, marginBottom: 4, letterSpacing: 0.5 }}>{ind.k}</div>
-                          <div style={{ fontSize: 13, fontWeight: 800, color: ind.col }}>{ind.v}</div>
+                          <div style={{ fontSize: 13, fontWeight: 800, color: ind.col }}>{ind.v ?? '—'}</div>
                         </div>
                       ))}
                     </div>
                   </>)}
 
-                  {/* Fibonacci + Trade Levels */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+                  {/* Fibonacci + ATR Trade Levels */}
+                  <div className="ax-2col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
                     {techData.fibonacci && (
                       <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 16px' }}>
                         <div style={{ fontSize: 9, color: C.ghost, letterSpacing: 2, marginBottom: 8 }}>FIBONACCI (60-DAY)</div>
@@ -709,6 +756,31 @@ export default function AnalysisDashboard() {
                     )}
                   </div>
 
+                  {/* Signals: Buy/Sell crossover history */}
+                  {(techData.buy_signals?.length > 0 || techData.sell_signals?.length > 0) && (<>
+                    <div style={{ fontSize: 9, color: C.ghost, letterSpacing: 2, marginBottom: 8 }}>SIGNALS — MACD CROSSOVER HISTORY</div>
+                    <div className="ax-2col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+                      <div style={{ background: C.panel, border: `1px solid ${C.green}20`, borderTop: `2px solid ${C.green}50`, borderRadius: 10, padding: '12px 16px' }}>
+                        <div style={{ fontSize: 9, color: C.green, letterSpacing: 2, marginBottom: 8, fontWeight: 700 }}>↑ BUY CROSSOVERS</div>
+                        {techData.buy_signals.slice(-8).reverse().map((s: any, i: number) => (
+                          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: `1px solid rgba(255,255,255,0.04)`, fontSize: 10 }}>
+                            <span style={{ color: C.dim }}>{s.date}</span>
+                            <span style={{ color: C.green, fontWeight: 700 }}>${s.price}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{ background: C.panel, border: `1px solid ${C.red}20`, borderTop: `2px solid ${C.red}50`, borderRadius: 10, padding: '12px 16px' }}>
+                        <div style={{ fontSize: 9, color: C.red, letterSpacing: 2, marginBottom: 8, fontWeight: 700 }}>↓ SELL CROSSOVERS</div>
+                        {techData.sell_signals.slice(-8).reverse().map((s: any, i: number) => (
+                          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: `1px solid rgba(255,255,255,0.04)`, fontSize: 10 }}>
+                            <span style={{ color: C.dim }}>{s.date}</span>
+                            <span style={{ color: C.red, fontWeight: 700 }}>${s.price}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </>)}
+
                   {/* 17-factor checklist */}
                   {techData.confluence?.checklist && (
                     <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden', marginBottom: 14 }}>
@@ -728,29 +800,47 @@ export default function AnalysisDashboard() {
                     </div>
                   )}
 
-                  {/* Buy/Sell crossover history */}
-                  {(techData.buy_signals?.length > 0 || techData.sell_signals?.length > 0) && (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                      <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 16px' }}>
-                        <div style={{ fontSize: 9, color: C.green, letterSpacing: 2, marginBottom: 8, fontWeight: 700 }}>↑ BUY CROSSOVERS</div>
-                        {techData.buy_signals.slice(-8).reverse().map((s: any, i: number) => (
-                          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: `1px solid rgba(255,255,255,0.04)`, fontSize: 10 }}>
-                            <span style={{ color: C.dim }}>{s.date}</span>
-                            <span style={{ color: C.green, fontWeight: 700 }}>${s.price}</span>
-                          </div>
-                        ))}
+                  {/* 🔬 Research sub-tabs (reuse from analysis run) */}
+                  {Object.keys(webResearch).length > 0 && (
+                    <div style={{ marginBottom: 14 }}>
+                      <div style={{ fontSize: 9, color: C.ghost, letterSpacing: 2, marginBottom: 8 }}>🔬 RESEARCH</div>
+                      <div style={{ display: 'flex', gap: 0, borderBottom: `1px solid ${C.border}` }}>
+                        {RESEARCH_SECTIONS.map(s => {
+                          const rs = webResearch[s.key];
+                          const active = researchTab === s.key;
+                          return (
+                            <button key={s.key} onClick={() => setResearchTab(s.key)} style={{ padding: '7px 12px', background: 'transparent', border: 'none', borderBottom: `2px solid ${active ? s.color : 'transparent'}`, color: active ? s.color : C.dim, fontSize: 10, fontFamily: C.font, fontWeight: active ? 700 : 400, cursor: 'pointer', marginBottom: -1, display: 'flex', alignItems: 'center', gap: 5 }}>
+                              {s.label}
+                              {rs?.loading && <span style={{ width: 5, height: 5, borderRadius: '50%', background: s.color, animation: 'pulse 1s infinite', flexShrink: 0 }} />}
+                            </button>
+                          );
+                        })}
                       </div>
-                      <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 16px' }}>
-                        <div style={{ fontSize: 9, color: C.red, letterSpacing: 2, marginBottom: 8, fontWeight: 700 }}>↓ SELL CROSSOVERS</div>
-                        {techData.sell_signals.slice(-8).reverse().map((s: any, i: number) => (
-                          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: `1px solid rgba(255,255,255,0.04)`, fontSize: 10 }}>
-                            <span style={{ color: C.dim }}>{s.date}</span>
-                            <span style={{ color: C.red, fontWeight: 700 }}>${s.price}</span>
+                      {RESEARCH_SECTIONS.map(s => {
+                        if (researchTab !== s.key) return null;
+                        const rs = webResearch[s.key];
+                        if (!rs) return null;
+                        return (
+                          <div key={s.key} style={{ background: C.panel, border: `1px solid ${s.color}18`, borderTop: `2px solid ${s.color}35`, borderRadius: '0 8px 8px 8px', padding: '14px 16px' }}>
+                            {rs.loading && (
+                              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                {[0,1,2,3].map(i => <span key={i} style={{ width: 6, height: 6, borderRadius: '50%', background: s.color, opacity: 0.55, animation: `pulse 1.2s ${i * 0.2}s infinite` }} />)}
+                                <span style={{ fontSize: 10, color: C.dim, marginLeft: 4 }}>Searching live sources...</span>
+                              </div>
+                            )}
+                            {rs.error && <div style={{ color: C.red, fontSize: 11 }}>⚠️ {rs.error}</div>}
+                            {rs.result && (<>
+                              {rs.fetchedAt && <div style={{ fontSize: 9, color: C.ghost, marginBottom: 8 }}>{rs.provider?.includes('tavily') ? '🌐 live web' : '⚡ ai generated'} · {rs.fetchedAt}</div>}
+                              <pre style={{ color: C.sub, fontSize: 12, lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0, fontFamily: C.font }}>{rs.result}</pre>
+                            </>)}
                           </div>
-                        ))}
-                      </div>
+                        );
+                      })}
                     </div>
                   )}
+
+                  {/* TradingView Technicals widget */}
+                  <TradingViewTechnicals ticker={techData.ticker || ticker || chartTicker} />
                 </>)}
               </div>
             )}
