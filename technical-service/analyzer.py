@@ -348,29 +348,34 @@ def _score(c, h, l, o, rsi_s, macd_s, sig_s, hist_s, stoch_k, stoch_d,
 
 # ── Main analyze function ─────────────────────────────────────────────────────
 
-_PERIOD_DAYS = {'1mo': 31, '3mo': 93, '6mo': 183, '1y': 366, '2y': 732, '5y': 1827}
-
-
-def _fetch_stooq(ticker: str, period: str) -> pd.DataFrame:
-    """Stooq CSV — no API key, never blocks VPS IPs."""
+def _fetch_via_webhook(ticker: str, period: str) -> pd.DataFrame:
+    """Fetch OHLCV from webhook-server's yahoo-finance2 proxy (same Docker network)."""
     try:
-        url = f'https://stooq.com/q/d/l/?s={ticker.lower()}.us&i=d'
-        df = pd.read_csv(url, parse_dates=['Date'], index_col='Date')
-        if df.empty or 'Close' not in df.columns:
+        url = f'http://webhook-server:3001/yf-history/{ticker}?period={period}'
+        r = _SESSION.get(url, timeout=30)
+        if r.status_code != 200:
+            print(f'[yf-proxy] {ticker} HTTP {r.status_code}: {r.text[:120]}', flush=True)
             return pd.DataFrame()
-        df = df.sort_index()
-        days = _PERIOD_DAYS.get(period, 183)
-        df = df[df.index >= pd.Timestamp.now() - pd.Timedelta(days=days)]
-        if len(df) >= 20:
+        data = r.json()
+        if not data or not isinstance(data, list):
+            return pd.DataFrame()
+        df = pd.DataFrame(data)
+        df['Date'] = pd.to_datetime(df['date'])
+        df = df.set_index('Date').sort_index()
+        df = df.rename(columns={
+            'open': 'Open', 'high': 'High', 'low': 'Low',
+            'close': 'Close', 'volume': 'Volume',
+        })
+        if len(df) >= 20 and 'Close' in df.columns:
             return df
-    except Exception:
-        pass
+    except Exception as e:
+        print(f'[yf-proxy] {ticker}: {e}', flush=True)
     return pd.DataFrame()
 
 
 def _fetch(ticker: str, period: str) -> pd.DataFrame:
-    """Try Stooq first (VPS-friendly), fall back to yfinance."""
-    df = _fetch_stooq(ticker, period)
+    """Primary: webhook-server Node.js proxy. Fallback: yfinance direct."""
+    df = _fetch_via_webhook(ticker, period)
     if not df.empty:
         return df
     for attempt in range(3):

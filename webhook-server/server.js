@@ -7,6 +7,7 @@ require('dotenv').config();
 const express = require('express');
 const cors    = require('cors');
 const Groq    = require('groq-sdk');
+const yf2     = require('yahoo-finance2').default;
 const app     = express();
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || '' });
@@ -279,6 +280,30 @@ ONLY JSON array. No markdown.`;
 
   console.log(`[WATCHLIST] Analyzed ${enriched.length} tickers`);
   res.json(enriched);
+});
+
+// ── GET /yf-history/:ticker — OHLCV proxy for Python technical-service ──
+const PERIOD_DAYS = { '1mo': 31, '3mo': 93, '6mo': 183, '1y': 366, '2y': 732 };
+app.get('/yf-history/:ticker', async (req, res) => {
+  const ticker = req.params.ticker.toUpperCase();
+  const period = req.query.period || '6mo';
+  const days   = PERIOD_DAYS[period] || 183;
+  const p2 = new Date();
+  const p1 = new Date(p2 - days * 86400000);
+  try {
+    const rows = await yf2.historical(ticker, {
+      period1:  p1.toISOString().split('T')[0],
+      period2:  p2.toISOString().split('T')[0],
+      interval: '1d',
+    });
+    if (!rows || rows.length === 0)
+      return res.status(404).json({ error: `No data for ${ticker}` });
+    console.log(`[YF-HISTORY] ${ticker} ${rows.length} rows`);
+    res.json(rows);
+  } catch (e) {
+    console.error(`[YF-HISTORY] ${ticker}: ${e.message}`);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ── GET /health ──────────────────────────────────────────────
