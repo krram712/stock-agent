@@ -97,5 +97,11 @@ export const api = {
     approveUser: (id: string) => apiClient.put(`/api/v1/admin/users/${id}/approve`),
     rejectUser:  (id: string) => apiClient.put(`/api/v1/admin/users/${id}/reject`),
   },
+  technical: {
+    analyze: (ticker: string, period = '6mo') =>
+      apiClient.get(`/technical-api/analyze/${ticker}`, { params: { period } }),
+    scan: (tickers: string[], period = '6mo') =>
+      apiClient.get('/technical-api/scan', { params: { tickers: tickers.join(','), period } }),
+  },
 };
 

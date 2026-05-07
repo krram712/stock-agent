@@ -11,6 +11,7 @@ import OptionsEngine from './OptionsEngine';
 import FinvizPanel from './FinvizPanel';
 import ScriptsTab from './ScriptsTab';
 import WatchlistTab from './WatchlistTab';
+import TechnicalScannerTab from './TechnicalScannerTab';
 
 // ─── Theme ────────────────────────────────────────────────────────────────────
 const C = {
@@ -120,6 +121,32 @@ function NavItem({ icon, label, active, badge, collapsed, onClick }: NavItemProp
   );
 }
 
+function ConfluenceChecklist({ checklist }: { checklist: any[] }) {
+  const [open, setOpen] = useState(false);
+  if (!checklist?.length) return null;
+  return (
+    <div style={{ borderTop: `1px solid rgba(255,255,255,0.06)` }}>
+      <button onClick={() => setOpen(o => !o)} style={{ width: '100%', padding: '9px 16px', background: 'transparent', border: 'none', cursor: 'pointer', color: '#3d5a6e', fontFamily: 'JetBrains Mono, monospace', fontSize: 9, letterSpacing: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span>17-FACTOR CHECKLIST ({checklist.length} factors)</span>
+        <span>{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div style={{ padding: '0 12px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {checklist.map((item: any, i: number) => (
+            <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '4px 6px', borderRadius: 5, background: item.status === 'bull' ? 'rgba(0,255,136,0.04)' : item.status === 'bear' ? 'rgba(239,68,68,0.04)' : 'transparent' }}>
+              <span style={{ fontSize: 11, flexShrink: 0, marginTop: 1 }}>{item.status === 'bull' ? '🟢' : item.status === 'bear' ? '🔴' : '⚪'}</span>
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 600, color: item.status === 'bull' ? '#00ff88' : item.status === 'bear' ? '#ef4444' : '#8ba0b0' }}>{item.label} <span style={{ fontSize: 9, color: item.points > 0 ? '#00ff88' : item.points < 0 ? '#ef4444' : '#3d5a6e' }}>({item.points > 0 ? '+' : ''}{item.points})</span></div>
+                <div style={{ fontSize: 9, color: '#3d5a6e', lineHeight: 1.4 }}>{item.detail}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function AnalysisDashboard() {
   const {
@@ -138,6 +165,8 @@ export default function AnalysisDashboard() {
   const [webResearch,   setWebResearch]   = useState<Record<string, ResearchState>>({});
   const [adminUsers,    setAdminUsers]    = useState<any[]>([]);
   const [adminLoading,  setAdminLoading]  = useState(false);
+  const [techData,      setTechData]      = useState<any>(null);
+  const [techLoading,   setTechLoading]   = useState(false);
 
   const { signals: tvSignals, latestSignal, isConnected: tvConnected } = useTradingViewSignals(chartTicker);
 
@@ -160,6 +189,9 @@ export default function AnalysisDashboard() {
     setTicker(t); setHorizon(hz); setChartTicker(t);
     clearAnalysisError();
     setActiveTab('analysis');
+    setTechData(null);
+    setTechLoading(true);
+    api.technical.analyze(t).then(r => setTechData(r.data)).catch(() => {}).finally(() => setTechLoading(false));
 
     const init: Record<string, ResearchState> = {};
     RESEARCH_SECTIONS.forEach(s => { init[s.key] = { loading: true, result: null, provider: null, error: null, fetchedAt: null }; });
@@ -180,6 +212,7 @@ export default function AnalysisDashboard() {
 
   const NAV = [
     { id: 'analysis',  icon: '⚡', label: 'Analysis'                              },
+    { id: 'scanner',   icon: '📊', label: 'Scanner'                               },
     { id: 'signals',   icon: '📡', label: 'Live Signals', badge: tvSignals.length },
     { id: 'history',   icon: '📋', label: 'History',      badge: analysisHistory.length },
     { id: 'watchlist', icon: '👁',  label: 'Watchlist'                             },
@@ -406,6 +439,77 @@ export default function AnalysisDashboard() {
                   ))}
                 </div>
 
+                {/* Technical confluence panel */}
+                {(techData || techLoading) && (
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 9, color: C.ghost, letterSpacing: 2, marginBottom: 8 }}>17-FACTOR CONFLUENCE ENGINE</div>
+                    {techLoading && !techData && (
+                      <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: '14px 18px', fontSize: 10, color: C.ghost }}>
+                        ⟳ Computing technical indicators...
+                      </div>
+                    )}
+                    {techData && (<>
+                      {/* Score + checklist */}
+                      <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden', marginBottom: 8 }}>
+                        {/* Score bar */}
+                        <div style={{ padding: '12px 16px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 22, fontWeight: 900, color: techData.action_color }}>{techData.score > 0 ? `+${techData.score}` : techData.score}</span>
+                            <div>
+                              <div style={{ fontSize: 8, color: C.ghost, letterSpacing: 1 }}>TECHNICAL</div>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: techData.action_color }}>{techData.action}</div>
+                            </div>
+                          </div>
+                          <div style={{ flex: 1, minWidth: 120 }}>
+                            <div style={{ fontSize: 8, color: C.ghost, marginBottom: 4 }}>BULL/BEAR CONFLUENCE  {techData.confluence.bull_count}B · {techData.confluence.bear_count}R</div>
+                            <div style={{ height: 6, background: `${C.red}20`, borderRadius: 3, overflow: 'hidden' }}>
+                              <div style={{ height: '100%', width: `${techData.confluence.bull_pct}%`, background: techData.confluence.bull_pct >= 55 ? C.green : C.red, borderRadius: 3 }} />
+                            </div>
+                            <div style={{ fontSize: 8, color: C.ghost, marginTop: 2 }}>{techData.confluence.bull_pct}% Bull</div>
+                          </div>
+                          {/* Fibonacci quick levels */}
+                          {techData.fibonacci && (
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                              {Object.entries(techData.fibonacci).map(([k, v]: any) => (
+                                <div key={k} style={{ textAlign: 'center' }}>
+                                  <div style={{ fontSize: 7, color: C.ghost }}>{k}</div>
+                                  <div style={{ fontSize: 10, fontWeight: 700, color: C.blue }}>${v}</div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        {/* Indicators grid */}
+                        {techData.indicators && (
+                          <div style={{ padding: '10px 16px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(90px,1fr))', gap: 6 }}>
+                            {[
+                              { k: 'RSI',      v: techData.indicators.rsi,      col: techData.indicators.rsi < 30 ? C.green : techData.indicators.rsi > 70 ? C.red : C.sub },
+                              { k: 'MACD',     v: techData.indicators.macd,     col: techData.indicators.macd > techData.indicators.signal ? C.green : C.red },
+                              { k: 'Stoch %K', v: techData.indicators.stoch_k,  col: techData.indicators.stoch_k < 20 ? C.green : techData.indicators.stoch_k > 80 ? C.red : C.sub },
+                              { k: 'ATR',      v: techData.indicators.atr,      col: C.yellow },
+                              { k: 'VWAP',     v: `$${techData.indicators.vwap}`, col: C.blue  },
+                              { k: 'SMA20',    v: `$${techData.indicators.sma20}`, col: C.yellow },
+                              { k: 'SMA50',    v: `$${techData.indicators.sma50}`, col: C.orange },
+                              { k: 'SMA200',   v: `$${techData.indicators.sma200}`, col: C.green },
+                              { k: 'SAR',      v: techData.indicators.sar_trend === 'uptrend' ? '↑ Up' : '↓ Down', col: techData.indicators.sar_trend === 'uptrend' ? C.green : C.red },
+                              { k: 'BB Upper', v: `$${techData.indicators.bb_upper}`, col: C.dim },
+                              { k: 'BB Lower', v: `$${techData.indicators.bb_lower}`, col: C.dim },
+                              { k: 'Stoch %D', v: techData.indicators.stoch_d,  col: C.sub },
+                            ].map(ind => (
+                              <div key={ind.k} style={{ background: 'rgba(255,255,255,0.015)', border: `1px solid ${C.border}`, borderRadius: 6, padding: '7px 10px', textAlign: 'center' }}>
+                                <div style={{ fontSize: 7, color: C.ghost, marginBottom: 3, letterSpacing: 0.5 }}>{ind.k}</div>
+                                <div style={{ fontSize: 11, fontWeight: 700, color: ind.col }}>{ind.v}</div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {/* Checklist (collapsed by default) */}
+                        <ConfluenceChecklist checklist={techData.confluence.checklist} />
+                      </div>
+                    </>)}
+                  </div>
+                )}
+
                 {/* Two-column */}
                 <div className="ax-2col" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 320px', gap: 14, alignItems: 'start' }}>
                   <div>
@@ -473,6 +577,11 @@ export default function AnalysisDashboard() {
                 </div>
               )}
             </>)}
+
+            {/* ── SCANNER ───────────────────────────────────────────────────── */}
+            {activeTab === 'scanner' && (
+              <TechnicalScannerTab onAnalyze={(t) => handleAnalyze(t)} />
+            )}
 
             {/* ── LIVE SIGNALS ──────────────────────────────────────────────── */}
             {activeTab === 'signals' && (
