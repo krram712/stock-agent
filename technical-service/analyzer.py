@@ -2,6 +2,7 @@ import io, base64, warnings, math, time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import numpy as np
 import pandas as pd
+import requests
 import yfinance as yf
 import matplotlib
 matplotlib.use('Agg')
@@ -9,6 +10,14 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 
 warnings.filterwarnings('ignore')
+
+# Yahoo Finance blocks datacenter IPs without a browser User-Agent
+_SESSION = requests.Session()
+_SESSION.headers.update({
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9',
+})
 
 BG='#0d1117'; PANEL='#161b22'; BORDER='#30363d'; MUTED='#8b949e'
 BLUE='#58a6ff'; GREEN='#3fb950'; RED='#ff7b72'; YELLOW='#f0c040'
@@ -342,17 +351,17 @@ def _score(c, h, l, o, rsi_s, macd_s, sig_s, hist_s, stoch_k, stoch_d,
 # ── Main analyze function ─────────────────────────────────────────────────────
 
 def _fetch(ticker: str, period: str) -> pd.DataFrame:
-    """Try Ticker.history first (more reliable), fall back to download."""
-    df = pd.DataFrame()
+    """Fetch OHLCV data with browser session to bypass VPS IP blocks."""
     for attempt in range(4):
         try:
-            df = yf.Ticker(ticker).history(period=period, auto_adjust=True)
+            df = yf.Ticker(ticker, session=_SESSION).history(period=period, auto_adjust=True)
             if not df.empty:
                 return df
         except Exception:
             pass
         try:
-            df = yf.download(ticker, period=period, progress=False, auto_adjust=True)
+            df = yf.download(ticker, period=period, progress=False,
+                             auto_adjust=True, session=_SESSION)
             if not df.empty:
                 if isinstance(df.columns, pd.MultiIndex):
                     df.columns = df.columns.get_level_values(0)
@@ -360,8 +369,8 @@ def _fetch(ticker: str, period: str) -> pd.DataFrame:
         except Exception:
             pass
         if attempt < 3:
-            time.sleep(1.5 * (attempt + 1))
-    return df
+            time.sleep(2 ** attempt)   # 1s, 2s, 4s
+    return pd.DataFrame()
 
 
 def analyze(ticker: str, period: str = '6mo') -> dict:
