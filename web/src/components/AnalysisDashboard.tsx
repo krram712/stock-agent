@@ -11,7 +11,6 @@ import OptionsEngine from './OptionsEngine';
 import FinvizPanel from './FinvizPanel';
 import ScriptsTab from './ScriptsTab';
 import WatchlistTab from './WatchlistTab';
-import TechnicalScannerTab from './TechnicalScannerTab';
 
 // ─── Theme ────────────────────────────────────────────────────────────────────
 const C = {
@@ -173,6 +172,16 @@ export default function AnalysisDashboard() {
   useEffect(() => { loadHistory().catch(() => {}); }, []);
   useEffect(() => { loadWatchlists().catch(() => {}); }, []);
 
+  useEffect(() => {
+    if (activeTab === 'scanner' && !techData && !techLoading) {
+      const t = (ticker || chartTicker).trim().toUpperCase();
+      if (t) {
+        setTechLoading(true);
+        api.technical.analyze(t).then(r => setTechData(r.data)).catch(() => {}).finally(() => setTechLoading(false));
+      }
+    }
+  }, [activeTab]);
+
   const loadAdminUsers = useCallback(async () => {
     setAdminLoading(true);
     try { const r = await api.admin.listUsers(); setAdminUsers(r.data); } catch {}
@@ -212,7 +221,7 @@ export default function AnalysisDashboard() {
 
   const NAV = [
     { id: 'analysis',  icon: '⚡', label: 'Analysis'                              },
-    { id: 'scanner',   icon: '📊', label: 'Scanner'                               },
+    { id: 'scanner',   icon: '📐', label: 'Technical'                             },
     { id: 'signals',   icon: '📡', label: 'Live Signals', badge: tvSignals.length },
     { id: 'history',   icon: '📋', label: 'History',      badge: analysisHistory.length },
     { id: 'watchlist', icon: '👁',  label: 'Watchlist'                             },
@@ -578,9 +587,172 @@ export default function AnalysisDashboard() {
               )}
             </>)}
 
-            {/* ── SCANNER ───────────────────────────────────────────────────── */}
+            {/* ── TECHNICAL ─────────────────────────────────────────────────── */}
             {activeTab === 'scanner' && (
-              <TechnicalScannerTab onAnalyze={(t) => handleAnalyze(t)} />
+              <div>
+                {!techLoading && !techData && (
+                  <div style={{ textAlign: 'center', padding: '60px 20px' }}>
+                    <div style={{ fontSize: 40, opacity: 0.08, marginBottom: 14 }}>📐</div>
+                    <div style={{ fontSize: 12, color: C.ghost, marginBottom: 8 }}>Enter a ticker and press RUN to see technical analysis</div>
+                    <div style={{ display: 'flex', gap: 6, justifyContent: 'center', flexWrap: 'wrap' }}>
+                      {['NVDA','AAPL','MSFT','TSLA','AMZN','META','GOOGL','AMD'].map(t => (
+                        <button key={t} onClick={() => { setTicker(t); setChartTicker(t); setTechLoading(true); api.technical.analyze(t).then(r => setTechData(r.data)).catch(() => {}).finally(() => setTechLoading(false)); }}
+                          style={{ padding: '6px 13px', borderRadius: 6, fontSize: 11, fontFamily: C.font, fontWeight: 700, cursor: 'pointer', background: `${C.green}08`, border: `1px solid ${C.green}20`, color: C.dim }}>
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {techLoading && (
+                  <div style={{ textAlign: 'center', padding: '50px 20px' }}>
+                    <div style={{ fontSize: 28, color: C.green, animation: 'pulse 1.1s infinite', marginBottom: 12 }}>⚡</div>
+                    <div style={{ fontSize: 13, color: C.green, fontWeight: 700, letterSpacing: 2, marginBottom: 6 }}>COMPUTING 17 FACTORS</div>
+                    <div style={{ fontSize: 10, color: C.ghost }}>{(ticker || chartTicker).toUpperCase()} · yfinance live data</div>
+                  </div>
+                )}
+                {techData && !techLoading && (<>
+                  {/* Score + header */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: 10, marginBottom: 12 }}>
+                    <div style={{ background: `${techData.action_color}0e`, border: `1px solid ${techData.action_color}28`, borderRadius: 12, padding: '16px 22px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minWidth: 90 }}>
+                      <div style={{ fontSize: 40, fontWeight: 900, color: techData.action_color, lineHeight: 1 }}>{techData.score > 0 ? `+${techData.score}` : techData.score}</div>
+                      <div style={{ fontSize: 8, color: C.ghost, letterSpacing: 2, marginTop: 2 }}>SCORE</div>
+                      <div style={{ width: '100%', height: 3, background: `${techData.action_color}18`, borderRadius: 2, marginTop: 8, overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${Math.min(100, Math.max(0, (techData.score + 25) / 50 * 100))}%`, background: techData.action_color, borderRadius: 2 }} />
+                      </div>
+                    </div>
+                    <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 12, padding: '14px 20px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginBottom: 10 }}>
+                        <div>
+                          <div style={{ fontSize: 22, fontWeight: 900, color: C.green, letterSpacing: 2 }}>{techData.ticker}</div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: techData.action_color }}>{techData.action}</div>
+                        </div>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: C.txt }}>${techData.price?.toFixed(2)}</div>
+                        <div style={{ flex: 1, minWidth: 130 }}>
+                          <div style={{ fontSize: 8, color: C.ghost, marginBottom: 4 }}>BULL / BEAR  ·  {techData.confluence.bull_count}B · {techData.confluence.bear_count}R</div>
+                          <div style={{ height: 8, background: `${C.red}20`, borderRadius: 4, overflow: 'hidden' }}>
+                            <div style={{ height: '100%', width: `${techData.confluence.bull_pct}%`, background: techData.confluence.bull_pct >= 55 ? C.green : C.red, borderRadius: 4 }} />
+                          </div>
+                          <div style={{ fontSize: 8, color: C.ghost, marginTop: 2 }}>{techData.confluence.bull_pct}% Bull Confluence</div>
+                        </div>
+                      </div>
+                      {techData.reasons?.length > 0 && (
+                        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                          {techData.reasons.slice(0, 8).map((r: string, i: number) => (
+                            <span key={i} style={{ padding: '2px 8px', background: `${C.green}10`, border: `1px solid ${C.green}20`, borderRadius: 99, fontSize: 9, color: C.green }}>{r}</span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Indicator cards */}
+                  {techData.indicators && (<>
+                    <div style={{ fontSize: 9, color: C.ghost, letterSpacing: 2, marginBottom: 8 }}>TECHNICAL INDICATORS</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(110px,1fr))', gap: 7, marginBottom: 14 }}>
+                      {[
+                        { k: 'RSI (14)',   v: techData.indicators.rsi,          col: techData.indicators.rsi < 30 ? C.green : techData.indicators.rsi > 70 ? C.red : C.sub },
+                        { k: 'MACD',      v: techData.indicators.macd,          col: techData.indicators.macd > techData.indicators.signal ? C.green : C.red },
+                        { k: 'Signal',    v: techData.indicators.signal,        col: C.sub },
+                        { k: 'Histogram', v: techData.indicators.hist,          col: (techData.indicators.hist ?? 0) > 0 ? C.green : C.red },
+                        { k: 'Stoch %K',  v: techData.indicators.stoch_k,      col: techData.indicators.stoch_k < 20 ? C.green : techData.indicators.stoch_k > 80 ? C.red : C.sub },
+                        { k: 'Stoch %D',  v: techData.indicators.stoch_d,      col: C.sub },
+                        { k: 'ATR',       v: `$${techData.indicators.atr}`,     col: C.yellow },
+                        { k: 'VWAP',      v: `$${techData.indicators.vwap}`,    col: C.blue   },
+                        { k: 'SMA 20',    v: `$${techData.indicators.sma20}`,   col: C.yellow },
+                        { k: 'SMA 50',    v: `$${techData.indicators.sma50}`,   col: C.orange },
+                        { k: 'SMA 200',   v: `$${techData.indicators.sma200}`,  col: C.green  },
+                        { k: 'BB Upper',  v: `$${techData.indicators.bb_upper}`,col: C.dim    },
+                        { k: 'BB Lower',  v: `$${techData.indicators.bb_lower}`,col: C.dim    },
+                        { k: 'SAR',       v: techData.indicators.sar_trend === 'uptrend' ? '↑ Uptrend' : '↓ Downtrend', col: techData.indicators.sar_trend === 'uptrend' ? C.green : C.red },
+                      ].map(ind => (
+                        <div key={ind.k} style={{ background: C.panel, border: `1px solid ${C.border}`, borderTop: `2px solid ${ind.col}40`, borderRadius: 8, padding: '10px 12px', textAlign: 'center' }}>
+                          <div style={{ fontSize: 8, color: C.ghost, marginBottom: 4, letterSpacing: 0.5 }}>{ind.k}</div>
+                          <div style={{ fontSize: 13, fontWeight: 800, color: ind.col }}>{ind.v}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </>)}
+
+                  {/* Fibonacci + Trade Levels */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+                    {techData.fibonacci && (
+                      <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 16px' }}>
+                        <div style={{ fontSize: 9, color: C.ghost, letterSpacing: 2, marginBottom: 8 }}>FIBONACCI (60-DAY)</div>
+                        {Object.entries(techData.fibonacci).map(([k, v]: any) => (
+                          <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: `1px solid rgba(255,255,255,0.04)` }}>
+                            <span style={{ fontSize: 10, color: C.dim }}>{k}</span>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: C.blue }}>${v}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {techData.levels && (
+                      <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 16px' }}>
+                        <div style={{ fontSize: 9, color: C.ghost, letterSpacing: 2, marginBottom: 8 }}>ATR-BASED LEVELS</div>
+                        {[
+                          { k: 'Entry',       v: `$${techData.price?.toFixed(2)}`,  col: C.green  },
+                          { k: 'Stop Loss',   v: `$${techData.levels.stop}`,        col: C.red    },
+                          { k: 'Target 1',    v: `$${techData.levels.t1}`,          col: C.yellow },
+                          { k: 'Target 2',    v: `$${techData.levels.t2}`,          col: C.yellow },
+                          { k: 'Target 3',    v: `$${techData.levels.t3}`,          col: C.yellow },
+                          { k: 'Risk/Reward', v: `1:${techData.levels.rr}`,         col: C.blue   },
+                          { k: 'Support',     v: `$${techData.levels.support}`,     col: C.green  },
+                          { k: 'Resistance',  v: `$${techData.levels.resistance}`,  col: C.red    },
+                        ].map(l => (
+                          <div key={l.k} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: `1px solid rgba(255,255,255,0.04)` }}>
+                            <span style={{ fontSize: 10, color: C.dim }}>{l.k}</span>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: l.col }}>{l.v}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 17-factor checklist */}
+                  {techData.confluence?.checklist && (
+                    <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden', marginBottom: 14 }}>
+                      <div style={{ padding: '12px 16px', borderBottom: `1px solid ${C.border}`, fontSize: 9, color: C.ghost, letterSpacing: 2 }}>17-FACTOR CONFLUENCE CHECKLIST</div>
+                      <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                        {techData.confluence.checklist.map((item: any, i: number) => (
+                          <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '5px 6px', borderRadius: 5, background: item.status === 'bull' ? `${C.green}05` : item.status === 'bear' ? `${C.red}05` : 'transparent' }}>
+                            <span style={{ fontSize: 11, flexShrink: 0, marginTop: 1 }}>{item.status === 'bull' ? '🟢' : item.status === 'bear' ? '🔴' : '⚪'}</span>
+                            <div style={{ flex: 1 }}>
+                              <span style={{ fontSize: 10, fontWeight: 600, color: item.status === 'bull' ? C.green : item.status === 'bear' ? C.red : C.sub }}>{item.label}</span>
+                              <span style={{ fontSize: 9, color: item.points > 0 ? C.green : item.points < 0 ? C.red : C.dim, marginLeft: 6 }}>({item.points > 0 ? '+' : ''}{item.points})</span>
+                              <div style={{ fontSize: 9, color: C.dim, marginTop: 1 }}>{item.detail}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Buy/Sell crossover history */}
+                  {(techData.buy_signals?.length > 0 || techData.sell_signals?.length > 0) && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                      <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 16px' }}>
+                        <div style={{ fontSize: 9, color: C.green, letterSpacing: 2, marginBottom: 8, fontWeight: 700 }}>↑ BUY CROSSOVERS</div>
+                        {techData.buy_signals.slice(-8).reverse().map((s: any, i: number) => (
+                          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: `1px solid rgba(255,255,255,0.04)`, fontSize: 10 }}>
+                            <span style={{ color: C.dim }}>{s.date}</span>
+                            <span style={{ color: C.green, fontWeight: 700 }}>${s.price}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 16px' }}>
+                        <div style={{ fontSize: 9, color: C.red, letterSpacing: 2, marginBottom: 8, fontWeight: 700 }}>↓ SELL CROSSOVERS</div>
+                        {techData.sell_signals.slice(-8).reverse().map((s: any, i: number) => (
+                          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: `1px solid rgba(255,255,255,0.04)`, fontSize: 10 }}>
+                            <span style={{ color: C.dim }}>{s.date}</span>
+                            <span style={{ color: C.red, fontWeight: 700 }}>${s.price}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>)}
+              </div>
             )}
 
             {/* ── LIVE SIGNALS ──────────────────────────────────────────────── */}
