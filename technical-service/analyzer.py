@@ -10,18 +10,12 @@ import matplotlib.gridspec as gridspec
 
 warnings.filterwarnings('ignore')
 
-# Yahoo Finance checks TLS fingerprints on datacenter IPs.
-# curl_cffi impersonates a real Chrome TLS handshake — most reliable fix.
-try:
-    from curl_cffi import requests as cffi_requests
-    _SESSION = cffi_requests.Session(impersonate='chrome110')
-except ImportError:
-    import requests as _requests
-    _SESSION = _requests.Session()
-    _SESSION.headers['User-Agent'] = (
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-        'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
-    )
+import requests as _requests
+_SESSION = _requests.Session()
+_SESSION.headers['User-Agent'] = (
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+    'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+)
 
 BG='#0d1117'; PANEL='#161b22'; BORDER='#30363d'; MUTED='#8b949e'
 BLUE='#58a6ff'; GREEN='#3fb950'; RED='#ff7b72'; YELLOW='#f0c040'
@@ -354,26 +348,40 @@ def _score(c, h, l, o, rsi_s, macd_s, sig_s, hist_s, stoch_k, stoch_d,
 
 # ── Main analyze function ─────────────────────────────────────────────────────
 
+_PERIOD_DAYS = {'1mo': 31, '3mo': 93, '6mo': 183, '1y': 366, '2y': 732, '5y': 1827}
+
+
+def _fetch_stooq(ticker: str, period: str) -> pd.DataFrame:
+    """Stooq CSV — no API key, never blocks VPS IPs."""
+    try:
+        url = f'https://stooq.com/q/d/l/?s={ticker.lower()}.us&i=d'
+        df = pd.read_csv(url, parse_dates=['Date'], index_col='Date')
+        if df.empty or 'Close' not in df.columns:
+            return pd.DataFrame()
+        df = df.sort_index()
+        days = _PERIOD_DAYS.get(period, 183)
+        df = df[df.index >= pd.Timestamp.now() - pd.Timedelta(days=days)]
+        if len(df) >= 20:
+            return df
+    except Exception:
+        pass
+    return pd.DataFrame()
+
+
 def _fetch(ticker: str, period: str) -> pd.DataFrame:
-    """Fetch OHLCV data with browser session to bypass VPS IP blocks."""
-    for attempt in range(4):
+    """Try Stooq first (VPS-friendly), fall back to yfinance."""
+    df = _fetch_stooq(ticker, period)
+    if not df.empty:
+        return df
+    for attempt in range(3):
         try:
             df = yf.Ticker(ticker, session=_SESSION).history(period=period, auto_adjust=True)
             if not df.empty:
                 return df
         except Exception:
             pass
-        try:
-            df = yf.download(ticker, period=period, progress=False,
-                             auto_adjust=True, session=_SESSION)
-            if not df.empty:
-                if isinstance(df.columns, pd.MultiIndex):
-                    df.columns = df.columns.get_level_values(0)
-                return df
-        except Exception:
-            pass
-        if attempt < 3:
-            time.sleep(2 ** attempt)   # 1s, 2s, 4s
+        if attempt < 2:
+            time.sleep(2 ** attempt)
     return pd.DataFrame()
 
 
