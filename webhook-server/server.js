@@ -7,7 +7,15 @@ require('dotenv').config();
 const express = require('express');
 const cors    = require('cors');
 const Groq    = require('groq-sdk');
-const yf2     = require('yahoo-finance2').default;
+// yahoo-finance2 is ESM-only — use dynamic import() cached on first call
+let _yf2 = null;
+async function loadYF2() {
+  if (!_yf2) {
+    const mod = await import('yahoo-finance2');
+    _yf2 = mod.default;
+  }
+  return _yf2;
+}
 const app     = express();
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || '' });
@@ -291,6 +299,7 @@ app.get('/yf-history/:ticker', async (req, res) => {
   const p2 = new Date();
   const p1 = new Date(p2 - days * 86400000);
   try {
+    const yf2  = await loadYF2();
     const rows = await yf2.historical(ticker, {
       period1:  p1.toISOString().split('T')[0],
       period2:  p2.toISOString().split('T')[0],
