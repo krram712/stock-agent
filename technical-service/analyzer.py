@@ -341,13 +341,31 @@ def _score(c, h, l, o, rsi_s, macd_s, sig_s, hist_s, stoch_k, stoch_d,
 
 # ── Main analyze function ─────────────────────────────────────────────────────
 
+def _fetch(ticker: str, period: str) -> pd.DataFrame:
+    """Try Ticker.history first (more reliable), fall back to download."""
+    df = pd.DataFrame()
+    for attempt in range(4):
+        try:
+            df = yf.Ticker(ticker).history(period=period, auto_adjust=True)
+            if not df.empty:
+                return df
+        except Exception:
+            pass
+        try:
+            df = yf.download(ticker, period=period, progress=False, auto_adjust=True)
+            if not df.empty:
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.get_level_values(0)
+                return df
+        except Exception:
+            pass
+        if attempt < 3:
+            time.sleep(1.5 * (attempt + 1))
+    return df
+
+
 def analyze(ticker: str, period: str = '6mo') -> dict:
-    for attempt in range(3):
-        df = yf.download(ticker, period=period, progress=False, auto_adjust=True)
-        if not df.empty:
-            break
-        if attempt < 2:
-            time.sleep(1.5)
+    df = _fetch(ticker, period)
     if df.empty:
         raise ValueError(f'No data for {ticker}')
 
