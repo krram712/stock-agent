@@ -1,4 +1,5 @@
 import io, base64, warnings, math, time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import numpy as np
 import pandas as pd
 import yfinance as yf
@@ -447,31 +448,33 @@ def analyze(ticker: str, period: str = '6mo') -> dict:
 
 # ── Watchlist scan ────────────────────────────────────────────────────────────
 
+def _scan_one(t: str, period: str) -> dict:
+    try:
+        d = analyze(t, period)
+        return {
+            'ticker':    d['ticker'],
+            'price':     d['price'],
+            'action':    d['action'],
+            'color':     d['action_color'],
+            'score':     d['score'],
+            'bull_pct':  d['confluence']['bull_pct'],
+            'rsi':       d['indicators']['rsi'],
+            'stoch_k':   d['indicators']['stoch_k'],
+            'macd_bull': d['indicators']['macd'] > d['indicators']['signal'],
+            'sar_trend': d['indicators']['sar_trend'],
+            'stop':      d['levels']['stop'],
+            't1':        d['levels']['t1'],
+            't2':        d['levels']['t2'],
+            'risk':      d['levels']['risk'],
+            'rr':        d['levels']['rr'],
+        }
+    except Exception as e:
+        return {'ticker': t, 'action': 'ERROR', 'color': '#666', 'score': 0,
+                'bull_pct': 50, 'error': str(e)}
+
+
 def scan(tickers: list, period: str = '6mo') -> list:
-    rows = []
-    for i, t in enumerate(tickers):
-        if i > 0:
-            time.sleep(0.4)
-        try:
-            d = analyze(t, period)
-            rows.append({
-                'ticker':    d['ticker'],
-                'price':     d['price'],
-                'action':    d['action'],
-                'color':     d['action_color'],
-                'score':     d['score'],
-                'bull_pct':  d['confluence']['bull_pct'],
-                'rsi':       d['indicators']['rsi'],
-                'stoch_k':   d['indicators']['stoch_k'],
-                'macd_bull': d['indicators']['macd'] > d['indicators']['signal'],
-                'sar_trend': d['indicators']['sar_trend'],
-                'stop':      d['levels']['stop'],
-                't1':        d['levels']['t1'],
-                't2':        d['levels']['t2'],
-                'risk':      d['levels']['risk'],
-                'rr':        d['levels']['rr'],
-            })
-        except Exception as e:
-            rows.append({'ticker': t, 'action': 'ERROR', 'color': '#666', 'score': 0,
-                         'bull_pct': 50, 'error': str(e)})
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = {pool.submit(_scan_one, t, period): t for t in tickers}
+        rows = [f.result() for f in as_completed(futures)]
     return sorted(rows, key=lambda x: x.get('score', 0), reverse=True)

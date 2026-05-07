@@ -99,9 +99,9 @@ export const api = {
   },
   technical: {
     analyze: (ticker: string, period = '6mo') =>
-      apiClient.get(`/technical-api/analyze/${ticker}`, { params: { period } }),
+      apiClient.get(`/technical-api/analyze/${ticker}`, { params: { period }, timeout: 60000 }),
     scan: (tickers: string[], period = '6mo') =>
-      apiClient.get('/technical-api/scan', { params: { tickers: tickers.join(','), period } }),
+      apiClient.get('/technical-api/scan', { params: { tickers: tickers.join(','), period }, timeout: 120000 }),
   },
 };
 
