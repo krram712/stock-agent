@@ -2,7 +2,6 @@ import io, base64, warnings, math, time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import numpy as np
 import pandas as pd
-import requests
 import yfinance as yf
 import matplotlib
 matplotlib.use('Agg')
@@ -11,13 +10,18 @@ import matplotlib.gridspec as gridspec
 
 warnings.filterwarnings('ignore')
 
-# Yahoo Finance blocks datacenter IPs without a browser User-Agent
-_SESSION = requests.Session()
-_SESSION.headers.update({
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.9',
-})
+# Yahoo Finance checks TLS fingerprints on datacenter IPs.
+# curl_cffi impersonates a real Chrome TLS handshake — most reliable fix.
+try:
+    from curl_cffi import requests as cffi_requests
+    _SESSION = cffi_requests.Session(impersonate='chrome110')
+except ImportError:
+    import requests as _requests
+    _SESSION = _requests.Session()
+    _SESSION.headers['User-Agent'] = (
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+        'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+    )
 
 BG='#0d1117'; PANEL='#161b22'; BORDER='#30363d'; MUTED='#8b949e'
 BLUE='#58a6ff'; GREEN='#3fb950'; RED='#ff7b72'; YELLOW='#f0c040'
