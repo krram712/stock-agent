@@ -1,4 +1,4 @@
-import io, base64, warnings, math, time
+import io, base64, warnings, math, time, os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import numpy as np
 import pandas as pd
@@ -16,6 +16,8 @@ _SESSION.headers['User-Agent'] = (
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
     'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
 )
+
+_TWELVE_KEY = os.getenv('TWELVE_DATA_KEY', '').strip()
 
 BG='#0d1117'; PANEL='#161b22'; BORDER='#30363d'; MUTED='#8b949e'
 BLUE='#58a6ff'; GREEN='#3fb950'; RED='#ff7b72'; YELLOW='#f0c040'
@@ -348,6 +350,34 @@ def _score(c, h, l, o, rsi_s, macd_s, sig_s, hist_s, stoch_k, stoch_d,
 
 # ── Main analyze function ─────────────────────────────────────────────────────
 
+def _fetch_twelvedata(ticker: str, period: str) -> pd.DataFrame:
+    """Twelve Data API — free 800 req/day, works on all IPs including VPS."""
+    if not _TWELVE_KEY:
+        return pd.DataFrame()
+    try:
+        outputsize = {'1mo': 30, '3mo': 65, '6mo': 130, '1y': 252, '2y': 504}.get(period, 130)
+        url = (f'https://api.twelvedata.com/time_series'
+               f'?symbol={ticker}&interval=1day&outputsize={outputsize}'
+               f'&apikey={_TWELVE_KEY}&format=JSON')
+        r = _SESSION.get(url, timeout=15)
+        data = r.json()
+        if data.get('status') != 'ok' or 'values' not in data:
+            print(f'[twelvedata] {ticker}: {data.get("message","error")}', flush=True)
+            return pd.DataFrame()
+        df = pd.DataFrame(data['values'])
+        df['Date'] = pd.to_datetime(df['datetime'])
+        df = df.set_index('Date').sort_index()
+        df = df.rename(columns={'open':'Open','high':'High','low':'Low','close':'Close','volume':'Volume'})
+        for col in ['Open','High','Low','Close']:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+        df['Volume'] = pd.to_numeric(df.get('Volume', 0), errors='coerce').fillna(0).astype(int)
+        if len(df) >= 20 and 'Close' in df.columns:
+            return df
+    except Exception as e:
+        print(f'[twelvedata] {ticker}: {e}', flush=True)
+    return pd.DataFrame()
+
+
 def _fetch_via_webhook(ticker: str, period: str) -> pd.DataFrame:
     """Fetch OHLCV from webhook-server's yahoo-finance2 proxy (same Docker network)."""
     try:
@@ -374,19 +404,19 @@ def _fetch_via_webhook(ticker: str, period: str) -> pd.DataFrame:
 
 
 def _fetch(ticker: str, period: str) -> pd.DataFrame:
-    """Primary: webhook-server Node.js proxy. Fallback: yfinance direct."""
+    """Twelve Data (key required) → webhook proxy → yfinance fallback."""
+    df = _fetch_twelvedata(ticker, period)
+    if not df.empty:
+        return df
     df = _fetch_via_webhook(ticker, period)
     if not df.empty:
         return df
-    for attempt in range(3):
-        try:
-            df = yf.Ticker(ticker, session=_SESSION).history(period=period, auto_adjust=True)
-            if not df.empty:
-                return df
-        except Exception:
-            pass
-        if attempt < 2:
-            time.sleep(2 ** attempt)
+    try:
+        df = yf.Ticker(ticker, session=_SESSION).history(period=period, auto_adjust=True)
+        if not df.empty:
+            return df
+    except Exception:
+        pass
     return pd.DataFrame()
 
 

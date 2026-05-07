@@ -163,6 +163,8 @@ services:
       context: ./technical-service
       dockerfile: Dockerfile
     restart: always
+    environment:
+      - TWELVE_DATA_KEY=${TWELVE_DATA_KEY:-}
     networks:
       - axiom-net
     healthcheck:
