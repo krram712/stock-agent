@@ -1,4 +1,4 @@
-import io, base64, warnings, math
+import io, base64, warnings, math, time
 import numpy as np
 import pandas as pd
 import yfinance as yf
@@ -341,7 +341,12 @@ def _score(c, h, l, o, rsi_s, macd_s, sig_s, hist_s, stoch_k, stoch_d,
 # ── Main analyze function ─────────────────────────────────────────────────────
 
 def analyze(ticker: str, period: str = '6mo') -> dict:
-    df = yf.download(ticker, period=period, progress=False, auto_adjust=True)
+    for attempt in range(3):
+        df = yf.download(ticker, period=period, progress=False, auto_adjust=True)
+        if not df.empty:
+            break
+        if attempt < 2:
+            time.sleep(1.5)
     if df.empty:
         raise ValueError(f'No data for {ticker}')
 
@@ -444,7 +449,9 @@ def analyze(ticker: str, period: str = '6mo') -> dict:
 
 def scan(tickers: list, period: str = '6mo') -> list:
     rows = []
-    for t in tickers:
+    for i, t in enumerate(tickers):
+        if i > 0:
+            time.sleep(0.4)
         try:
             d = analyze(t, period)
             rows.append({
