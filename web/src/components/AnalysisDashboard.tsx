@@ -195,6 +195,7 @@ export default function AnalysisDashboard() {
   const [chartInterval, setChartInterval] = useState<'D'|'60'|'15'|'W'>('D');
   const [activeTab,     setActiveTab]     = useState('analysis');
   const [sidebarOpen,   setSidebarOpen]   = useState(true);
+  const [mobileDrawer,  setMobileDrawer]  = useState(false);
   const [researchTab,   setResearchTab]   = useState('news');
   const [webResearch,   setWebResearch]   = useState<Record<string, ResearchState>>({});
   const [adminUsers,    setAdminUsers]    = useState<any[]>([]);
@@ -294,8 +295,9 @@ export default function AnalysisDashboard() {
   ];
 
   const CSS = `
-    @keyframes pulse  { 0%,100%{opacity:1}50%{opacity:.35} }
-    @keyframes fadeIn { from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none} }
+    @keyframes pulse     { 0%,100%{opacity:1}50%{opacity:.35} }
+    @keyframes fadeIn    { from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none} }
+    @keyframes slideInL  { from{transform:translateX(-100%)}to{transform:translateX(0)} }
     *{box-sizing:border-box}
     ::-webkit-scrollbar{width:4px;height:4px}
     ::-webkit-scrollbar-thumb{background:rgba(0,255,136,0.12);border-radius:3px}
@@ -303,6 +305,7 @@ export default function AnalysisDashboard() {
     input::placeholder{color:${C.ghost}}
     .ax-fade{animation:fadeIn 0.22s ease both}
     .ax-bottom-nav{display:none}
+    .ax-mobile-drawer{display:none}
     @media(max-width:768px){
       .ax-sidebar{display:none!important}
       .ax-main{margin-left:0!important}
@@ -311,6 +314,7 @@ export default function AnalysisDashboard() {
       .ax-metrics{grid-template-columns:repeat(2,1fr)!important}
       .ax-bottom-nav{display:flex!important}
       .ax-content-pad{padding-bottom:80px!important}
+      .ax-mobile-drawer{display:block!important}
     }
   `;
 
@@ -388,10 +392,10 @@ export default function AnalysisDashboard() {
           {/* Sticky top bar */}
           <div style={{ position: 'sticky', top: 0, zIndex: 20, background: 'rgba(6,16,26,0.97)', backdropFilter: 'blur(14px)', borderBottom: `1px solid ${C.border}`, padding: '9px 16px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
 
-            {/* Hamburger */}
-            <button onClick={() => setSidebarOpen(o => !o)} title="Toggle sidebar"
+            {/* Hamburger — desktop: toggle sidebar width; mobile: open drawer */}
+            <button onClick={() => { setSidebarOpen(o => !o); setMobileDrawer(o => !o); }} title="Toggle sidebar"
               style={{ padding: '6px 8px', background: 'transparent', border: 'none', color: C.dim, cursor: 'pointer', fontSize: 14, fontFamily: C.font, flexShrink: 0, borderRadius: 5 }}>
-              {sidebarOpen ? '◀' : '▶'}
+              ☰
             </button>
 
             {/* Ticker input */}
@@ -1143,6 +1147,56 @@ export default function AnalysisDashboard() {
       </div>
 
       {/* ── Mobile bottom nav ─────────────────────────────────────────────── */}
+      {/* ── Mobile drawer overlay ───────────────────────────────────────── */}
+      {mobileDrawer && (
+        <div className="ax-mobile-drawer" style={{ position: 'fixed', inset: 0, zIndex: 100 }}
+          onClick={() => setMobileDrawer(false)}>
+          {/* Backdrop */}
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }} />
+          {/* Drawer panel */}
+          <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: 240, background: C.sidebar, borderRight: `1px solid ${C.green}18`, animation: 'slideInL 0.22s ease', display: 'flex', flexDirection: 'column' }}
+            onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div style={{ padding: '18px 16px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: `1px solid ${C.border}` }}>
+              <span style={{ fontSize: 14, fontWeight: 900, letterSpacing: 3, background: `linear-gradient(90deg,${C.green},${C.blue})`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>AXIOM</span>
+              <button onClick={() => setMobileDrawer(false)} style={{ background: 'transparent', border: 'none', color: C.dim, fontSize: 18, cursor: 'pointer', padding: '0 4px' }}>✕</button>
+            </div>
+            {/* Nav items */}
+            <nav style={{ flex: 1, paddingTop: 8, overflowY: 'auto' }}>
+              {NAV.map(item => (
+                <button key={item.id}
+                  onClick={() => { setActiveTab(item.id); setMobileDrawer(false); if (item.id === 'admin') loadAdminUsers(); }}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: activeTab === item.id ? `${C.green}10` : 'transparent', border: 'none', borderLeft: `3px solid ${activeTab === item.id ? C.green : 'transparent'}`, color: activeTab === item.id ? C.green : C.dim, fontFamily: C.font, fontSize: 12, fontWeight: activeTab === item.id ? 700 : 400, cursor: 'pointer', textAlign: 'left' as const, position: 'relative' as const }}>
+                  <span style={{ fontSize: 17, width: 24, textAlign: 'center' as const }}>{item.icon}</span>
+                  <span>{item.label}</span>
+                  {item.badge != null && item.badge > 0 && (
+                    <span style={{ marginLeft: 'auto', background: C.green, color: C.bg, fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 99 }}>{item.badge}</span>
+                  )}
+                </button>
+              ))}
+            </nav>
+            {/* User info */}
+            {user && (
+              <div style={{ padding: '12px 16px', borderTop: `1px solid ${C.border}` }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 10 }}>
+                  <div style={{ width: 32, height: 32, borderRadius: '50%', background: `${C.green}15`, border: `1px solid ${C.green}30`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, color: C.green, fontWeight: 700, flexShrink: 0 }}>
+                    {(user.firstName?.[0] || user.username?.[0] || user.email?.[0] || '?').toUpperCase()}
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: C.txt, fontWeight: 600 }}>{user.firstName || user.username || user.email?.split('@')[0]}</div>
+                    <div style={{ fontSize: 9, color: C.dim }}>{user.subscriptionTier || 'FREE'}</div>
+                  </div>
+                </div>
+                <button onClick={async () => { setMobileDrawer(false); await logout(); navigate('/'); }}
+                  style={{ width: '100%', padding: '8px', borderRadius: 7, background: 'transparent', border: `1px solid ${C.border}`, color: C.dim, fontSize: 10, fontFamily: C.font, cursor: 'pointer', letterSpacing: 1 }}>
+                  ⏻ LOG OUT
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="ax-bottom-nav" style={{
         position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 50,
         background: 'rgba(5,13,22,0.97)', backdropFilter: 'blur(14px)',
