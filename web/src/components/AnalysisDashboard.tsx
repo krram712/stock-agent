@@ -299,7 +299,6 @@ export default function AnalysisDashboard() {
     @keyframes fadeIn    { from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none} }
     @keyframes slideInL  { from{transform:translateX(-100%)}to{transform:translateX(0)} }
     *{box-sizing:border-box}
-    html,body{overflow-x:hidden}
     ::-webkit-scrollbar{width:4px;height:4px}
     ::-webkit-scrollbar-thumb{background:rgba(0,255,136,0.12);border-radius:3px}
     input:focus{outline:none;border-color:${C.green}80!important;box-shadow:0 0 0 3px ${C.green}0c!important}
@@ -310,17 +309,17 @@ export default function AnalysisDashboard() {
     .ax-hide-mobile{display:flex}
     @media(max-width:768px){
       .ax-sidebar{display:none!important}
-      .ax-main{margin-left:0!important;width:100%!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch!important}
+      .ax-main{margin-left:0!important;width:100vw!important;max-width:100vw!important}
       .ax-2col{grid-template-columns:1fr!important}
       .ax-tv{order:-1}
       .ax-metrics{grid-template-columns:repeat(2,1fr)!important}
       .ax-bottom-nav{display:flex!important}
-      .ax-content-pad{padding:12px 10px 90px!important}
+      .ax-content-pad{padding:10px 10px 100px!important}
       .ax-mobile-drawer{display:block!important}
       .ax-hide-mobile{display:none!important}
-      .ax-topbar{flex-wrap:nowrap!important;gap:6px!important}
+      .ax-topbar{flex-wrap:nowrap!important;gap:6px!important;overflow:hidden}
       .ax-topbar-input{flex-shrink:0}
-      .ax-run-btn{padding:9px 12px!important;font-size:10px!important}
+      .ax-run-btn{padding:9px 14px!important;margin-left:auto!important}
     }
   `;
 
@@ -393,7 +392,7 @@ export default function AnalysisDashboard() {
         </aside>
 
         {/* ── Main ──────────────────────────────────────────────────────────── */}
-        <main className="ax-main" style={{ flex: 1, minHeight: '100vh', overflowX: 'hidden', overflowY: 'auto', WebkitOverflowScrolling: 'touch' } as any}>
+        <main className="ax-main" style={{ flex: 1, minWidth: 0 }}>
 
           {/* Sticky top bar */}
           <div className="ax-topbar" style={{ position: 'sticky', top: 0, zIndex: 20, background: 'rgba(6,16,26,0.97)', backdropFilter: 'blur(14px)', borderBottom: `1px solid ${C.border}`, padding: '9px 12px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
