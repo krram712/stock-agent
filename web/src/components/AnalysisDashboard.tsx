@@ -299,6 +299,7 @@ export default function AnalysisDashboard() {
     @keyframes fadeIn    { from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none} }
     @keyframes slideInL  { from{transform:translateX(-100%)}to{transform:translateX(0)} }
     *{box-sizing:border-box}
+    html,body{overflow-x:hidden}
     ::-webkit-scrollbar{width:4px;height:4px}
     ::-webkit-scrollbar-thumb{background:rgba(0,255,136,0.12);border-radius:3px}
     input:focus{outline:none;border-color:${C.green}80!important;box-shadow:0 0 0 3px ${C.green}0c!important}
@@ -306,15 +307,20 @@ export default function AnalysisDashboard() {
     .ax-fade{animation:fadeIn 0.22s ease both}
     .ax-bottom-nav{display:none}
     .ax-mobile-drawer{display:none}
+    .ax-hide-mobile{display:flex}
     @media(max-width:768px){
       .ax-sidebar{display:none!important}
-      .ax-main{margin-left:0!important}
+      .ax-main{margin-left:0!important;width:100%!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch!important}
       .ax-2col{grid-template-columns:1fr!important}
       .ax-tv{order:-1}
       .ax-metrics{grid-template-columns:repeat(2,1fr)!important}
       .ax-bottom-nav{display:flex!important}
-      .ax-content-pad{padding-bottom:80px!important}
+      .ax-content-pad{padding:12px 10px 90px!important}
       .ax-mobile-drawer{display:block!important}
+      .ax-hide-mobile{display:none!important}
+      .ax-topbar{flex-wrap:nowrap!important;gap:6px!important}
+      .ax-topbar-input{flex-shrink:0}
+      .ax-run-btn{padding:9px 12px!important;font-size:10px!important}
     }
   `;
 
@@ -387,29 +393,29 @@ export default function AnalysisDashboard() {
         </aside>
 
         {/* ── Main ──────────────────────────────────────────────────────────── */}
-        <main className="ax-main" style={{ flex: 1, minHeight: '100vh', overflowX: 'hidden' }}>
+        <main className="ax-main" style={{ flex: 1, minHeight: '100vh', overflowX: 'hidden', overflowY: 'auto', WebkitOverflowScrolling: 'touch' } as any}>
 
           {/* Sticky top bar */}
-          <div style={{ position: 'sticky', top: 0, zIndex: 20, background: 'rgba(6,16,26,0.97)', backdropFilter: 'blur(14px)', borderBottom: `1px solid ${C.border}`, padding: '9px 16px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <div className="ax-topbar" style={{ position: 'sticky', top: 0, zIndex: 20, background: 'rgba(6,16,26,0.97)', backdropFilter: 'blur(14px)', borderBottom: `1px solid ${C.border}`, padding: '9px 12px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
 
             {/* Hamburger — desktop: toggle sidebar width; mobile: open drawer */}
             <button onClick={() => { setSidebarOpen(o => !o); setMobileDrawer(o => !o); }} title="Toggle sidebar"
-              style={{ padding: '6px 8px', background: 'transparent', border: 'none', color: C.dim, cursor: 'pointer', fontSize: 14, fontFamily: C.font, flexShrink: 0, borderRadius: 5 }}>
+              style={{ padding: '6px 8px', background: 'transparent', border: 'none', color: C.dim, cursor: 'pointer', fontSize: 16, fontFamily: C.font, flexShrink: 0, borderRadius: 5 }}>
               ☰
             </button>
 
             {/* Ticker input */}
-            <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(0,0,0,0.5)', border: `1px solid ${C.green}40`, borderRadius: 8, overflow: 'hidden', flexShrink: 0 }}>
+            <div className="ax-topbar-input" style={{ display: 'flex', alignItems: 'center', background: 'rgba(0,0,0,0.5)', border: `1px solid ${C.green}40`, borderRadius: 8, overflow: 'hidden', flexShrink: 0 }}>
               <span style={{ padding: '0 6px 0 10px', fontSize: 12, color: C.ghost, fontWeight: 700 }}>$</span>
               <input value={ticker}
                 onChange={e => setTicker(e.target.value.toUpperCase().replace(/[^A-Z.]/g, ''))}
                 onKeyDown={e => e.key === 'Enter' && handleAnalyze()}
                 placeholder="AAPL" maxLength={8}
-                style={{ width: 88, background: 'transparent', border: 'none', padding: '9px 10px 9px 0', color: C.green, fontSize: 16, fontWeight: 800, fontFamily: C.font, letterSpacing: 2 }} />
+                style={{ width: 80, background: 'transparent', border: 'none', padding: '9px 10px 9px 0', color: C.green, fontSize: 15, fontWeight: 800, fontFamily: C.font, letterSpacing: 2 }} />
             </div>
 
-            {/* Quick chips */}
-            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+            {/* Quick chips — hidden on mobile */}
+            <div className="ax-hide-mobile" style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
               {QUICK_TICKERS.map(t => (
                 <button key={t} onClick={() => { setTicker(t); setChartTicker(t); }}
                   style={{ padding: '5px 9px', borderRadius: 5, fontSize: 10, fontFamily: C.font, fontWeight: 700, cursor: 'pointer', letterSpacing: 0.5, background: ticker === t ? `${C.green}18` : 'transparent', border: `1px solid ${ticker === t ? C.green + '55' : C.border}`, color: ticker === t ? C.green : C.dim, transition: 'all 0.12s' }}>
@@ -418,8 +424,8 @@ export default function AnalysisDashboard() {
               ))}
             </div>
 
-            {/* Horizon pills */}
-            <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
+            {/* Horizon pills — hidden on mobile */}
+            <div className="ax-hide-mobile" style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
               {HORIZONS.map(h => (
                 <button key={h.id} onClick={() => setHorizon(h.id)}
                   style={{ padding: '5px 10px', borderRadius: 5, fontSize: 10, fontFamily: C.font, fontWeight: 600, cursor: 'pointer', background: horizon === h.id ? `${C.blue}18` : 'transparent', border: `1px solid ${horizon === h.id ? C.blue + '50' : C.border}`, color: horizon === h.id ? C.blue : C.dim }}>
@@ -429,9 +435,9 @@ export default function AnalysisDashboard() {
             </div>
 
             {/* Run button */}
-            <button onClick={() => handleAnalyze()} disabled={isAnalyzing || !ticker.trim()}
-              style={{ padding: '9px 18px', borderRadius: 8, fontSize: 11, fontFamily: C.font, fontWeight: 700, letterSpacing: 1, flexShrink: 0, cursor: isAnalyzing || !ticker.trim() ? 'not-allowed' : 'pointer', background: isAnalyzing || !ticker.trim() ? `${C.green}06` : `linear-gradient(135deg,${C.green}22,${C.blue}18)`, border: `1px solid ${isAnalyzing || !ticker.trim() ? C.green + '18' : C.green + '40'}`, color: isAnalyzing || !ticker.trim() ? C.ghost : C.green }}>
-              {isAnalyzing ? '⟳ ANALYZING...' : '⚡ RUN'}
+            <button className="ax-run-btn" onClick={() => handleAnalyze()} disabled={isAnalyzing || !ticker.trim()}
+              style={{ padding: '9px 18px', borderRadius: 8, fontSize: 11, fontFamily: C.font, fontWeight: 700, letterSpacing: 1, flexShrink: 0, marginLeft: 'auto', cursor: isAnalyzing || !ticker.trim() ? 'not-allowed' : 'pointer', background: isAnalyzing || !ticker.trim() ? `${C.green}06` : `linear-gradient(135deg,${C.green}22,${C.blue}18)`, border: `1px solid ${isAnalyzing || !ticker.trim() ? C.green + '18' : C.green + '40'}`, color: isAnalyzing || !ticker.trim() ? C.ghost : C.green }}>
+              {isAnalyzing ? '⟳' : '⚡ RUN'}
             </button>
           </div>
 
@@ -452,7 +458,7 @@ export default function AnalysisDashboard() {
           )}
 
           {/* Tab content */}
-          <div style={{ padding: '16px 16px 64px' }} className="ax-fade ax-content-pad">
+          <div style={{ padding: '14px 14px 80px' }} className="ax-fade ax-content-pad">
 
             {/* ── ANALYSIS ──────────────────────────────────────────────────── */}
             {activeTab === 'analysis' && (<>
